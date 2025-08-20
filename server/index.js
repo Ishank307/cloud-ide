@@ -1,10 +1,12 @@
 const express =require('express')
-const fs =require('fs')
+const fs =require('fs').promises
 const http = require('http')
 const {Server:SocketServer}=require('socket.io')
 const app=express();
 const server=http.createServer(app)
-const pty= require('node-pty')
+const pty= require('node-pty');
+const path = require('path');
+const cors= require('cors')
 
 var ptyProcess = pty.spawn('bash', [], {
   name: 'xterm-color',
@@ -39,6 +41,36 @@ io.on('connection',(socket)=>{
     })
 })
 
+app.use(cors());
+
+app.get('/files',async (req,res)=>{
+    const filetree=await generatefile('./user');
+    return res.json({tree:filetree})
+})
+
 server.listen('8000',()=>{
     console.log(`Docker is running on port 8000`)
 })
+
+async function generatefile(directory){
+    const tree ={};
+
+    async function buildtree(currentDirectory,currentTree){
+        const files = await fs.readdir(currentDirectory)
+
+        for(const file of files){
+            const filePath= path.join(currentDirectory, file);
+            const stat= await fs.stat(filePath);
+            if(stat.isDirectory() ){
+                currentTree[file]={};
+                await buildtree(filePath,currentTree[file]);
+            }
+            else{
+                currentTree[file]=null;
+            }
+        }
+
+    }
+    await buildtree(directory,tree);
+    return tree;
+}

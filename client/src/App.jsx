@@ -1,11 +1,33 @@
-import Terminal from "../components/terminal"
+import Terminal from "./components/terminal"
+import './App.css';
+import { useEffect, useState } from "react";
+import FileTree from "./components/tree";
 
 function App() {
-    return(
-        <div>
-            <div>
-                <Terminal />
-            </div>
+    const [fileTree,setFileTree]=useState({});
+
+    const getFileTree = async () =>{
+    const response= await fetch("http://localhost:8000/files");
+    const result = await response.json();
+    setFileTree(result.tree);
+ }
+
+   useEffect(() => {
+        getFileTree();
+    }, []);
+ 
+ return(
+        <div className="playground-container">
+            <div className="editor-container">  
+                </div>
+                <div className="files">
+                    <FileTree tree={fileTree}
+                    />
+                </div>
+               <div className="terminal-container"> 
+                
+                <Terminal/>
+                </div>
         </div>
     )
 }

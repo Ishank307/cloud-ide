@@ -1,9 +1,10 @@
-import {Terminal as XTerminal} from '@xterm/xterm'
+import { Terminal as XTerminal } from '@xterm/xterm'
 import { useEffect } from 'react';
 import { useRef } from 'react';
 import '@xterm/xterm/css/xterm.css';
+import socket from '../socket';
 
-const Terminal =() => {
+const Terminal = () => {
 
     const terminalRef = useRef();
     const isRendered = useRef(false);
@@ -14,14 +15,18 @@ const Terminal =() => {
         terminal.open(terminalRef.current);
 
         terminal.onData((data) => {
-            console.log(data);
+            socket.emit('terminal:write',data);    
         });
+
+        socket.on('terminal:data',(data)=>{
+            terminal.write(data)
+        })
 
         isRendered.current = true;
     }, [])
 
     return (
-        <div id='terminal' ref={terminalRef}/>
+        <div id='terminal' ref={terminalRef} />
     )
 }
 export default Terminal;
