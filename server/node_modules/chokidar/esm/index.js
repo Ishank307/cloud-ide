@@ -1,14 +1,10 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.FSWatcher = exports.WatchHelper = void 0;
-exports.watch = watch;
 /*! chokidar - MIT License (c) 2012 Paul Miller (paulmillr.com) */
-const fs_1 = require("fs");
-const promises_1 = require("fs/promises");
-const events_1 = require("events");
-const sysPath = require("path");
-const readdirp_1 = require("readdirp");
-const handler_js_1 = require("./handler.js");
+import { stat as statcb } from 'fs';
+import { stat, readdir } from 'fs/promises';
+import { EventEmitter } from 'events';
+import * as sysPath from 'path';
+import { readdirp } from 'readdirp';
+import { NodeFsHandler, EVENTS as EV, isWindows, isIBMi, EMPTY_FN, STR_CLOSE, STR_END, } from './handler.js';
 const SLASH = '/';
 const SLASH_SLASH = '//';
 const ONE_DOT = '.';
@@ -151,7 +147,7 @@ class DirEntry {
             return;
         const dir = this.path;
         try {
-            await (0, promises_1.readdir)(dir);
+            await readdir(dir);
         }
         catch (err) {
             if (this._removeWatcher) {
@@ -174,14 +170,14 @@ class DirEntry {
     dispose() {
         this.items.clear();
         this.path = '';
-        this._removeWatcher = handler_js_1.EMPTY_FN;
+        this._removeWatcher = EMPTY_FN;
         this.items = EMPTY_SET;
         Object.freeze(this);
     }
 }
 const STAT_METHOD_F = 'stat';
 const STAT_METHOD_L = 'lstat';
-class WatchHelper {
+export class WatchHelper {
     constructor(path, follow, fsw) {
         this.fsw = fsw;
         const watchPath = path;
@@ -211,7 +207,6 @@ class WatchHelper {
         return this.fsw._isntIgnored(this.entryPath(entry), entry.stats);
     }
 }
-exports.WatchHelper = WatchHelper;
 /**
  * Watches files & directories for changes. Emitted events:
  * `add`, `addDir`, `change`, `unlink`, `unlinkDir`, `all`, `error`
@@ -220,7 +215,7 @@ exports.WatchHelper = WatchHelper;
  *       .add(directories)
  *       .on('add', path => log('File', path, 'was added'))
  */
-class FSWatcher extends events_1.EventEmitter {
+export class FSWatcher extends EventEmitter {
     // Not indenting methods for history sake; for now.
     constructor(_opts = {}) {
         super();
@@ -254,7 +249,7 @@ class FSWatcher extends events_1.EventEmitter {
             awaitWriteFinish: awf === true ? DEF_AWF : typeof awf === 'object' ? { ...DEF_AWF, ...awf } : false,
         };
         // Always default to polling on IBM i because fs.watch() is not available on IBM i.
-        if (handler_js_1.isIBMi)
+        if (isIBMi)
             opts.usePolling = true;
         // Editor atomic write normalization enabled by default with fs.watch
         if (opts.atomic === undefined)
@@ -280,16 +275,16 @@ class FSWatcher extends events_1.EventEmitter {
         this._emitReady = () => {
             readyCalls++;
             if (readyCalls >= this._readyCount) {
-                this._emitReady = handler_js_1.EMPTY_FN;
+                this._emitReady = EMPTY_FN;
                 this._readyEmitted = true;
                 // use process.nextTick to allow time for listener to be bound
-                process.nextTick(() => this.emit(handler_js_1.EVENTS.READY));
+                process.nextTick(() => this.emit(EV.READY));
             }
         };
-        this._emitRaw = (...args) => this.emit(handler_js_1.EVENTS.RAW, ...args);
+        this._emitRaw = (...args) => this.emit(EV.RAW, ...args);
         this._boundRemove = this._remove.bind(this);
         this.options = opts;
-        this._nodeFsHandler = new handler_js_1.NodeFsHandler(this);
+        this._nodeFsHandler = new NodeFsHandler(this);
         // You’re frozen when your heart’s not open.
         Object.freeze(opts);
     }
@@ -434,8 +429,8 @@ class FSWatcher extends events_1.EventEmitter {
     }
     emitWithAll(event, args) {
         this.emit(event, ...args);
-        if (event !== handler_js_1.EVENTS.ERROR)
-            this.emit(handler_js_1.EVENTS.ALL, event, ...args);
+        if (event !== EV.ERROR)
+            this.emit(EV.ALL, event, ...args);
     }
     // Common helpers
     // --------------
@@ -451,7 +446,7 @@ class FSWatcher extends events_1.EventEmitter {
         if (this.closed)
             return;
         const opts = this.options;
-        if (handler_js_1.isWindows)
+        if (isWindows)
             path = sysPath.normalize(path);
         if (opts.cwd)
             path = sysPath.relative(opts.cwd, path);
@@ -465,26 +460,26 @@ class FSWatcher extends events_1.EventEmitter {
             return this;
         }
         if (opts.atomic) {
-            if (event === handler_js_1.EVENTS.UNLINK) {
+            if (event === EV.UNLINK) {
                 this._pendingUnlinks.set(path, [event, ...args]);
                 setTimeout(() => {
                     this._pendingUnlinks.forEach((entry, path) => {
                         this.emit(...entry);
-                        this.emit(handler_js_1.EVENTS.ALL, ...entry);
+                        this.emit(EV.ALL, ...entry);
                         this._pendingUnlinks.delete(path);
                     });
                 }, typeof opts.atomic === 'number' ? opts.atomic : 100);
                 return this;
             }
-            if (event === handler_js_1.EVENTS.ADD && this._pendingUnlinks.has(path)) {
-                event = handler_js_1.EVENTS.CHANGE;
+            if (event === EV.ADD && this._pendingUnlinks.has(path)) {
+                event = EV.CHANGE;
                 this._pendingUnlinks.delete(path);
             }
         }
-        if (awf && (event === handler_js_1.EVENTS.ADD || event === handler_js_1.EVENTS.CHANGE) && this._readyEmitted) {
+        if (awf && (event === EV.ADD || event === EV.CHANGE) && this._readyEmitted) {
             const awfEmit = (err, stats) => {
                 if (err) {
-                    event = handler_js_1.EVENTS.ERROR;
+                    event = EV.ERROR;
                     args[0] = err;
                     this.emitWithAll(event, args);
                 }
@@ -502,18 +497,18 @@ class FSWatcher extends events_1.EventEmitter {
             this._awaitWriteFinish(path, awf.stabilityThreshold, event, awfEmit);
             return this;
         }
-        if (event === handler_js_1.EVENTS.CHANGE) {
-            const isThrottled = !this._throttle(handler_js_1.EVENTS.CHANGE, path, 50);
+        if (event === EV.CHANGE) {
+            const isThrottled = !this._throttle(EV.CHANGE, path, 50);
             if (isThrottled)
                 return this;
         }
         if (opts.alwaysStat &&
             stats === undefined &&
-            (event === handler_js_1.EVENTS.ADD || event === handler_js_1.EVENTS.ADD_DIR || event === handler_js_1.EVENTS.CHANGE)) {
+            (event === EV.ADD || event === EV.ADD_DIR || event === EV.CHANGE)) {
             const fullPath = opts.cwd ? sysPath.join(opts.cwd, path) : path;
             let stats;
             try {
-                stats = await (0, promises_1.stat)(fullPath);
+                stats = await stat(fullPath);
             }
             catch (err) {
                 // do nothing
@@ -536,7 +531,7 @@ class FSWatcher extends events_1.EventEmitter {
             code !== 'ENOENT' &&
             code !== 'ENOTDIR' &&
             (!this.options.ignorePermissionErrors || (code !== 'EPERM' && code !== 'EACCES'))) {
-            this.emit(handler_js_1.EVENTS.ERROR, error);
+            this.emit(EV.ERROR, error);
         }
         return error || this.closed;
     }
@@ -599,7 +594,7 @@ class FSWatcher extends events_1.EventEmitter {
         const now = new Date();
         const writes = this._pendingWrites;
         function awaitWriteFinishFn(prevStat) {
-            (0, fs_1.stat)(fullPath, (err, curStat) => {
+            statcb(fullPath, (err, curStat) => {
                 if (err || !writes.has(path)) {
                     if (err && err.code !== 'ENOENT')
                         awfEmit(err);
@@ -727,14 +722,14 @@ class FSWatcher extends events_1.EventEmitter {
             relPath = sysPath.relative(this.options.cwd, path);
         if (this.options.awaitWriteFinish && this._pendingWrites.has(relPath)) {
             const event = this._pendingWrites.get(relPath).cancelWait();
-            if (event === handler_js_1.EVENTS.ADD)
+            if (event === EV.ADD)
                 return;
         }
         // The Entry will either be a directory that just got removed
         // or a bogus entry to a file, in either case we have to remove it
         this._watched.delete(path);
         this._watched.delete(fullPath);
-        const eventName = isDirectory ? handler_js_1.EVENTS.UNLINK_DIR : handler_js_1.EVENTS.UNLINK;
+        const eventName = isDirectory ? EV.UNLINK_DIR : EV.UNLINK;
         if (wasTracked && !this._isIgnored(path))
             this._emit(eventName, path);
         // Avoid conflicts if we later create another file with the same name
@@ -771,13 +766,13 @@ class FSWatcher extends events_1.EventEmitter {
     _readdirp(root, opts) {
         if (this.closed)
             return;
-        const options = { type: handler_js_1.EVENTS.ALL, alwaysStat: true, lstat: true, ...opts, depth: 0 };
-        let stream = (0, readdirp_1.readdirp)(root, options);
+        const options = { type: EV.ALL, alwaysStat: true, lstat: true, ...opts, depth: 0 };
+        let stream = readdirp(root, options);
         this._streams.add(stream);
-        stream.once(handler_js_1.STR_CLOSE, () => {
+        stream.once(STR_CLOSE, () => {
             stream = undefined;
         });
-        stream.once(handler_js_1.STR_END, () => {
+        stream.once(STR_END, () => {
             if (stream) {
                 this._streams.delete(stream);
                 stream = undefined;
@@ -786,7 +781,6 @@ class FSWatcher extends events_1.EventEmitter {
         return stream;
     }
 }
-exports.FSWatcher = FSWatcher;
 /**
  * Instantiates watcher with paths to be tracked.
  * @param paths file / directory paths
@@ -796,9 +790,9 @@ exports.FSWatcher = FSWatcher;
  * const watcher = watch('.').on('all', (event, path) => { console.log(event, path); });
  * watch('.', { atomic: true, awaitWriteFinish: true, ignored: (f, stats) => stats?.isFile() && !f.endsWith('.js') })
  */
-function watch(paths, options = {}) {
+export function watch(paths, options = {}) {
     const watcher = new FSWatcher(options);
     watcher.add(paths);
     return watcher;
 }
-exports.default = { watch, FSWatcher };
+export default { watch, FSWatcher };

@@ -7,6 +7,7 @@ const server=http.createServer(app)
 const pty= require('node-pty');
 const path = require('path');
 const cors= require('cors')
+const chokidar=require('chokidar')
 
 var ptyProcess = pty.spawn('bash', [], {
   name: 'xterm-color',
@@ -41,6 +42,9 @@ io.on('connection',(socket)=>{
     })
 })
 
+const watcher = chokidar.watch('./user').on('all',(event,path)=>{
+    io.emit('file:refresh',path)
+});
 app.use(cors());
 
 app.get('/files',async (req,res)=>{

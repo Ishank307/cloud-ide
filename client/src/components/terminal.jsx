@@ -21,8 +21,13 @@ const Terminal = () => {
         socket.on('terminal:data',(data)=>{
             terminal.write(data)
         })
-
         isRendered.current = true;
+
+        // return()=>{
+        //     socket.off("terminal:data")
+        // }
+
+        
     }, [])
 
     return (

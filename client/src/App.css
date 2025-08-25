@@ -1,17 +1,56 @@
-.playground-container{
+.playground-container {
     display: flex;
     flex-direction: column;
     height: 100vh;
 }
 
-
+/* Make this a horizontal flex container */
 .editor-container {
-    flex: 1;
-    background: #f0f0f0; /* just for visibility */
+    flex: 1; /* This makes it take up all available vertical space */
+    display: flex;
+    flex-direction: row; /* This is the key change */
+    overflow: hidden; /* Prevents content from spilling out */
 }
 
+/* Style the file explorer panel */
+.files {
+    width: 250px; /* Give it a fixed width */
+    background: #f7f7f7;
+    border-right: 1px solid #ddd;
+    padding: 10px;
+    /* Allows scrolling if file list is long */
+    overflow-y: auto; 
+}
+
+/* Style the h1 inside the files panel */
+.files h1 {
+    font-size: 1rem;
+    margin: 0 0 10px 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+/* Make the editor take up the remaining space */
+.editor {
+    flex: 1; /* This makes it grow to fill the available horizontal space */
+}
 
 .terminal-container {
     height: 40vh;
     background: black;
+}
+
+#li {
+    list-style: "none"
+}
+
+.file-node::before {
+    cursor: grab;
+    content: "📄";
+    margin-right: 5px;
+}
+
+.folder-node::before {
+    content: "📁";
+    margin-right: 5px;
 }
