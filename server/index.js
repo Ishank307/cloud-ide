@@ -7,15 +7,20 @@ const server=http.createServer(app)
 const pty= require('node-pty');
 const path = require('path');
 const cors= require('cors')
-const chokidar=require('chokidar')
+const chokidar=require('chokidar');
+const { default: socket } = require('../client/src/socket');
 
 var ptyProcess = pty.spawn('bash', [], {
   name: 'xterm-color',
   cols: 80,
   rows: 30,
-  cwd: process.env.INIT_CWD,
-  env: process.env
+  cwd: process.env.INIT_CWD + '/user',
 });
+
+// setTimeout(() => { // made so that i can change path from ishank/... to workspace$ 
+//   ptyProcess.write('export PS1="workspace$ "\r');
+//   ptyProcess.write('clear\r');
+// }, 100);
 
 const io = new SocketServer({
     cors: '*'
@@ -40,7 +45,14 @@ io.on('connection',(socket)=>{
             callback({ success:!err,error:err?.message});
         })
     })
+
+
+     socket.on('file:change',async ({path,content})=>{
+                await fs.writeFile(`./user${path}`,content,'utf-8');
+        })
 })
+
+       
 
 const watcher = chokidar.watch('./user').on('all',(event,path)=>{
     io.emit('file:refresh',path)
@@ -50,6 +62,12 @@ app.use(cors());
 app.get('/files',async (req,res)=>{
     const filetree=await generatefile('./user');
     return res.json({tree:filetree})
+})
+
+app.get('/files/content', async (req,res)=>{
+    const path= req.query.path;
+    const content= await fs.readFile(`./user${path}`,'utf-8')
+    return res.json({content})
 })
 
 server.listen('8000',()=>{
