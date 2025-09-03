@@ -19,10 +19,10 @@ function App() {
     
 
     const getFileTree = async () =>{
-    const response= await fetch("http://localhost:8000/files");
+    const response= await fetch("http://localhost:9000/files");
     const result = await response.json();
-    // console.log('Full API response:', result);
-    // console.log('result.tree:', result.tree); 
+    console.log('Full API response:', result);
+    console.log('result.tree:', result.tree); 
     setFileTree(result.tree);
  }
 
@@ -53,12 +53,18 @@ function App() {
                 clearTimeout(timer)
             }
         }
-    },[code,selectedFile,isSaved])
+    },[code,selectedFile,isSaved]);
+
+    useEffect(()=>{
+        if(selectedFile && selectedFileContent){
+            setCode(selectedFileContent);
+        }
+    },[selectedFile,selectedFileContent])
 
 
     const getFileContent = useCallback(async ()=>{
         if(!selectedFile) return;
-        const response= await fetch(`http://localhost:8000/files/content?path=${selectedFile}`);
+        const response= await fetch(`http://localhost:9000/files/content?path=${selectedFile}`);
         const result = await response.json();
         setSelectedFileContent(result.content)
     },[selectedFile])  
