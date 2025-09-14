@@ -16,7 +16,7 @@ const FileTreeNode = ({ fileName, nodes,onselect,path }) => {
         
         style={{ marginLeft: '10px' }}> {/* Add some indentation */}
            <p className={isDir? "folder-node": "file-node"}>{fileName}</p> 
-            {nodes && typeof nodes === 'object' && Object.keys(nodes).length > 0 && (
+            {nodes && fileName!=='node_modules'&& typeof nodes === 'object' && Object.keys(nodes).length > 0 && (
                 <ul style={{ listStyle: 'none', paddingLeft: '10px' }}>
                     {Object.keys(nodes).map(child => (
                         <li key={child}>

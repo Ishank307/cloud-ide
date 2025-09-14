@@ -8,6 +8,7 @@ import "ace-builds/src-noconflict/mode-java";
 import "ace-builds/src-noconflict/theme-github";
 import "ace-builds/src-noconflict/ext-language_tools";
 
+
 function App() {
     const [fileTree,setFileTree]=useState({});
 
@@ -19,7 +20,7 @@ function App() {
     
 
     const getFileTree = async () =>{
-    const response= await fetch("http://localhost:9000/files");
+    const response= await fetch("http://localhost:8000/files");
     const result = await response.json();
     console.log('Full API response:', result);
     console.log('result.tree:', result.tree); 
@@ -40,7 +41,7 @@ function App() {
  
 
     useEffect(()=>{
-        if(code && !isSaved){
+        if(code && !isSaved && selectedFile && !selectedFile.endsWith('/')){
             const timer= setTimeout(()=>{
                 socket.emit("file:change",{
                     path:selectedFile,
@@ -55,6 +56,11 @@ function App() {
         }
     },[code,selectedFile,isSaved]);
 
+
+    useEffect(()=>{
+        setCode('')
+    },[selectedFile]);
+
     useEffect(()=>{
         if(selectedFile && selectedFileContent){
             setCode(selectedFileContent);
@@ -63,8 +69,8 @@ function App() {
 
 
     const getFileContent = useCallback(async ()=>{
-        if(!selectedFile) return;
-        const response= await fetch(`http://localhost:9000/files/content?path=${selectedFile}`);
+        if(!selectedFile || selectedFile.endsWith('/')) return; 
+        const response= await fetch(`http://localhost:8000/files/content?path=${selectedFile}`);
         const result = await response.json();
         setSelectedFileContent(result.content)
     },[selectedFile])  
@@ -84,10 +90,17 @@ function App() {
                 <h1>hello</h1>
             </div>
             <div className="editor">
-            {selectedFile && <p>{selectedFile.replaceAll('/', ' -> ')}</p>}
+            {selectedFile && <p>{selectedFile.replaceAll('/', ' -> ')}{isSaved? ' Saved':' Unsaved'}</p>}
                 <AceEditor
                 value={code}
                 onChange={(e)=>setCode(e)}
+                name="editor"
+                theme="github"
+                enableSnippets={{
+                    enableBasicAutocompletion:true,
+                    enableLiveAutoccompletion:true,
+                    enableSnippets:true,
+                }}
                 />
             </div>
 

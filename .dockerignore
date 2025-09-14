@@ -1,0 +1,8 @@
+# Ignore node_modules folders from both client and server
+server/node_modules
+client/node_modules
+
+# Ignore other local files and build outputs
+.env
+# client/dist
+npm-debug.log

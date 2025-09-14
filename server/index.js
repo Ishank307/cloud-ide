@@ -8,7 +8,7 @@ const pty= require('node-pty');
 const path = require('path');
 const cors= require('cors')
 const chokidar=require('chokidar');
-const { default: socket } = require('../client/src/socket');
+// const { default: socket } = require('../client/src/socket');
 
 var ptyProcess = pty.spawn('bash', [], {
   name: 'xterm-color',
@@ -52,11 +52,10 @@ io.on('connection',(socket)=>{
         })
 })
 
-       
-
-const watcher = chokidar.watch('./user').on('all',(event,path)=>{
-    io.emit('file:refresh',path)
+chokidar.watch('./user').on('all', (event, filePath) => {
+  io.emit('file:refresh', filePath);
 });
+
 app.use(cors());
 
 app.get('/files',async (req,res)=>{
@@ -65,12 +64,31 @@ app.get('/files',async (req,res)=>{
 })
 
 app.get('/files/content', async (req,res)=>{
-    const path= req.query.path;
-    const content= await fs.readFile(`./user${path}`,'utf-8')
+    const filePath= req.query.path;
+
+    if (!filePath) {
+            return res.status(400).json({error: 'Path parameter is required'});
+        }
+    
+        const fullPath= `./user${filePath}`;
+    // new code bases
+    const stat = await fs.stat(fullPath);
+        if (stat.isDirectory()) {
+            return res.status(400).json({error: 'Cannot read directory content'});
+        }
+
+    const content= await fs.readFile(`./user${filePath}`,'utf-8')
     return res.json({content})
 })
 
-server.listen('8000',()=>{
+
+app.use(express.static(path.join(__dirname, '..', 'client/build')));
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'client/build', 'index.html'));
+});
+
+server.listen('8000','0.0.0.0',()=>{
     console.log(`Docker is running on port 8000`)
 })
 
