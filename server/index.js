@@ -84,9 +84,9 @@ app.get('/files/content', async (req,res)=>{
 
 app.use(express.static(path.join(__dirname, '..', 'client/build')));
 
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'client/build', 'index.html'));
-});
+// app.get('*', (req, res) => {
+//   res.sendFile(path.join(__dirname, '..', 'client/build', 'index.html'));
+// });
 
 server.listen('8000','0.0.0.0',()=>{
     console.log(`Docker is running on port 8000`)
