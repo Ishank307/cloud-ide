@@ -8,6 +8,8 @@ const pty= require('node-pty');
 const path = require('path');
 const cors= require('cors')
 const chokidar=require('chokidar');
+const { error } = require('console');
+const { json } = require('stream/consumers');
 // const { default: socket } = require('../client/src/socket');
 
 var ptyProcess = pty.spawn('bash', [], {
@@ -57,7 +59,7 @@ chokidar.watch('./user').on('all', (event, filePath) => {
 });
 
 app.use(cors());
-
+app.use(express.json())
 app.get('/files',async (req,res)=>{
     const filetree=await generatefile('./user');
     return res.json({tree:filetree})
@@ -81,6 +83,57 @@ app.get('/files/content', async (req,res)=>{
     return res.json({content})
 })
 
+app.post('/files/create',async(req,res)=>{
+    const {path:filePath,type}=req.body;
+
+    if(!filePath){
+        return res.status(400).json({error:'Path parameter is required'});
+    }
+
+    const fullPath= `./user${filePath}`;
+
+    try{
+        if(type==='folder'){
+            await fs.mkdir(fullPath,{recursive:true})
+        }else{
+            await fs.writeFile(fullPath,'','utf-8');
+        }
+        res.json({success:true})
+    }
+    catch(error){
+        res.status(500).json({error:error.message});
+    }
+});
+
+app.delete('/files/delete',async(req,res)=>{
+    const {path:filePath}=req.body;
+    if(!filePath){
+        return res.status(400).json({error:'Path parameter is required'});
+    }
+
+    const fullPath= `./user${filePath}`;
+
+    // console.log('Received filePath:', filePath);
+    // console.log('Full path to delete:', fullPath);
+    try{
+        const stat= await fs.stat(fullPath);
+        //  console.log('File exists, isDirectory:', stat.isDirectory());
+        if(stat.isDirectory()){
+            await fs.rmdir(fullPath,{recursive: true});
+        }
+        else{
+            await fs.unlink(fullPath);
+        }
+        res.json({success:true,message:'Deleted successfully'});
+    }catch(error){
+        if(error.code==='ENOENT'){
+            res.status(404).json({error:'File or Folder not found'});
+
+        }else{
+            res.status(500).json({error:error.message})
+        }
+    }
+})
 
 app.use(express.static(path.join(__dirname, '..', 'client/build')));
 
