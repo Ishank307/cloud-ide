@@ -10,7 +10,6 @@ const cors= require('cors')
 const chokidar=require('chokidar');
 const { error } = require('console');
 const { json } = require('stream/consumers');
-// const { default: socket } = require('../client/src/socket');
 
 var ptyProcess = pty.spawn('bash', [], {
   name: 'xterm-color',
