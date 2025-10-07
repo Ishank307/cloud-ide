@@ -1,37 +1,49 @@
 import { Terminal as XTerminal } from '@xterm/xterm'
-import { useEffect } from 'react';
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import '@xterm/xterm/css/xterm.css';
-import socket from '../socket';
 
-const Terminal = () => {
-
+const Terminal = ({ socket }) => {
     const terminalRef = useRef();
-    const isRendered = useRef(false);
+    const terminalInstance = useRef(null);
 
     useEffect(() => {
-        if (isRendered.current) return;
-        const terminal = new XTerminal();
+        if (!socket || terminalInstance.current) return;
+
+        const terminal = new XTerminal({
+            cursorBlink: true,
+            fontSize: 14,
+            fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
+        });
+        
         terminal.open(terminalRef.current);
+        terminalInstance.current = terminal;
 
         terminal.onData((data) => {
-            socket.emit('terminal:write',data);    
+            socket.emit('terminal:write', data);    
         });
 
-        socket.on('terminal:data',(data)=>{
-            terminal.write(data)
-        })
-        isRendered.current = true;
+        socket.on('terminal:data', (data) => {
+            terminal.write(data);
+        });
 
-        // return()=>{
-        //     socket.off("terminal:data")
-        // }
-
-        
-    }, [])
+        return () => {
+            if (socket) {
+                socket.off('terminal:data');
+            }
+            if (terminal) {
+                terminal.dispose();
+            }
+            terminalInstance.current = null;
+        };
+    }, [socket]);
 
     return (
-        <div id='terminal' ref={terminalRef} />
-    )
-}
+        <div>
+            <div style={{ padding: '10px', background: '#f5f5f5', borderBottom: '1px solid #ddd' }}>
+                <strong>Terminal</strong>
+            </div>
+            <div id='terminal' ref={terminalRef} />
+        </div>
+    );
+};
 export default Terminal;

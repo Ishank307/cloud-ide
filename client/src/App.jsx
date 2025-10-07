@@ -1,86 +1,112 @@
 import Terminal from "./components/terminal"
+import Auth from "./components/Auth";
 import './App.css';
 import { useCallback, useEffect, useState } from "react";
 import FileTree from "./components/tree";
-import socket from "./socket";
+import socketManager from "./socket";
 import AceEditor from 'react-ace';
 import "ace-builds/src-noconflict/mode-java";
 import "ace-builds/src-noconflict/theme-github";
 import "ace-builds/src-noconflict/ext-language_tools";
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import { API_ENDPOINTS, SOCKET_URL } from "./config/api";
 
 
-function App() {
-    const [fileTree,setFileTree]=useState({});
-
-    const [selectedFile,setSelectedFile]=useState('');
-    const [selectedFileContent,setSelectedFileContent]=useState('');
-    const[code,setCode]=useState('');
-
+const MainApp = () => {
+    const { user, token, logout } = useAuth();
+    const [socket, setSocket] = useState(null);
+    const [fileTree, setFileTree] = useState({});
+    const [selectedFile, setSelectedFile] = useState('');
+    const [selectedFileContent, setSelectedFileContent] = useState('');
+    const [code, setCode] = useState('');
     const [showCreateModal, setShowCreateModal] = useState(false);
-    const [createType, setCreateType] = useState('file'); // 'file' or 'folder'
+    const [createType, setCreateType] = useState('file');
     const [createName, setCreateName] = useState('');
     const [currentPath, setCurrentPath] = useState('');
-    
-    const isSaved = selectedFileContent ===code;
-    
 
-    const getFileTree = async () =>{
-    const response= await fetch("http://localhost:8000/files");
-    const result = await response.json();
-    console.log('Full API response:', result);
-    console.log('result.tree:', result.tree); 
-    setFileTree(result.tree);
- }
+    const isSaved = selectedFileContent === code;
+
+    useEffect(() => {
+        if (token && !socket) {
+            const newSocket = socketManager.createSocket(token, SOCKET_URL);
+            setSocket(newSocket);
+        }
+    }, [token, socket]);
 
 
-    const createFileOrFolder =async ()=>{
-        if(!createName.trim())return;
-        const fullPath= currentPath ? `${currentPath}/${createName}`: `/${createName}`;
+    const getFileTree = async () => {
+        if (!token) return;
 
-        try{
-            const response=await fetch('http://localhost:8000/files/create',{
-                method:'POST',
-                headers:{
-                    'Content-Type':'application/json',
+        try {
+            const response = await fetch(API_ENDPOINTS.FILES, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (response.status === 401) {
+                logout();
+                return;
+            }
+
+            const result = await response.json();
+            setFileTree(result.tree);
+        } catch (error) {
+            console.error('Error fetching file tree:', error);
+        }
+    };
+
+
+    const createFileOrFolder = async () => {
+        if (!createName.trim()) return;
+        const fullPath = currentPath ? `${currentPath}/${createName}` : `/${createName}`;
+
+        try {
+            const response = await fetch(API_ENDPOINTS.FILES_CREATE, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
                 },
-                body:JSON.stringify({
-                    path:fullPath,
-                    type:createType
+                body: JSON.stringify({
+                    path: fullPath,
+                    type: createType
                 })
             });
 
 
-            if(response.ok){
+            if (response.ok) {
                 getFileTree();
                 setShowCreateModal(false);
                 setCreateName('');
-            }else{
-                const error= await response.json();
+            } else {
+                const error = await response.json();
                 alert(`Error creating ${createType}:${error.error}`)
             }
 
         }
-        catch(error){
+        catch (error) {
             console.error('Error creating file/folder', error);
-            alert( `Error creating ${createType}`);
+            alert(`Error creating ${createType}`);
         }
     };
-    
-    
-        const deleteFileOrFolder = async (filePath) => {
+
+
+    const deleteFileOrFolder = async (filePath) => {
         if (!confirm(`Are you sure you want to delete ${filePath}?`)) return;
-        
+
         try {
-            const response = await fetch('http://localhost:8000/files/delete', {
+            const response = await fetch(API_ENDPOINTS.FILES_DELETE, {
                 method: 'DELETE',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
                     path: filePath
                 })
             });
-            
+
             if (response.ok) {
                 getFileTree(); // Refresh the file tree
                 // If deleted file was selected, clear the editor
@@ -101,89 +127,125 @@ function App() {
 
 
 
-   useEffect(() => {
+    useEffect(() => {
         getFileTree();
     }, []);
 
-    useEffect(()=>
-    {
-        socket.on('file:refresh',getFileTree);
-        return ()=>{
-            socket.off('file:refresh',getFileTree)
+    useEffect(() => {
+        if (socket) {
+            socket.on('file:refresh', getFileTree);
+            return () => {
+                socket.off('file:refresh', getFileTree);
+            };
         }
-    },[])
- 
+    }, [socket]);
 
-    useEffect(()=>{
-        if(code && !isSaved && selectedFile && !selectedFile.endsWith('/')){
-            const timer= setTimeout(()=>{
-                socket.emit("file:change",{
-                    path:selectedFile,
+
+    useEffect(() => {
+        if (socket && code && !isSaved && selectedFile && !selectedFile.endsWith('/')) {
+            const timer = setTimeout(() => {
+                socket.emit("file:change", {
+                    path: selectedFile,
                     content: code,
-                })
-
-                console.log('Save code',code)
-            },5*1000)
-            return()=>{
-                clearTimeout(timer)
-            }
+                });
+            }, 5 * 1000);
+            return () => {
+                clearTimeout(timer);
+            };
         }
-    },[code,selectedFile,isSaved]);
+    }, [socket, code, selectedFile, isSaved]);
 
 
-    useEffect(()=>{
-        setCode('')
-    },[selectedFile]);
+    useEffect(() => {
+        // Clear code and content when switching files
+        setCode('');
+        setSelectedFileContent('');
+    }, [selectedFile]);
 
-    useEffect(()=>{
-        if(selectedFile && selectedFileContent){
+    useEffect(() => {
+        if (selectedFile && selectedFileContent !== null) {
             setCode(selectedFileContent);
         }
-    },[selectedFile,selectedFileContent])
+    }, [selectedFile, selectedFileContent]);
 
 
-    const getFileContent = useCallback(async ()=>{
-        if(!selectedFile || selectedFile.endsWith('/')) return; 
-        const response= await fetch(`http://localhost:8000/files/content?path=${selectedFile}`);
-        const result = await response.json();
-        setSelectedFileContent(result.content)
-    },[selectedFile])  
+    const getFileContent = useCallback(async () => {
+        if (!selectedFile || selectedFile.endsWith('/') || !token) {
+            setSelectedFileContent('');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_ENDPOINTS.FILES_CONTENT}?path=${selectedFile}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (response.status === 401) {
+                logout();
+                return;
+            }
+
+            if (response.status === 404) {
+                // File doesn't exist or is empty, set empty content
+                setSelectedFileContent('');
+                return;
+            }
+
+            const result = await response.json();
+            setSelectedFileContent(result.content || '');
+        } catch (error) {
+            console.error('Error fetching file content:', error);
+            // On error, assume it's a new file
+            setSelectedFileContent('');
+        }
+    }, [selectedFile, token, logout]);
 
 
-    useEffect(()=>{
-        if(selectedFile)
-            getFileContent()
-    })
+    useEffect(() => {
+        if (selectedFile && !selectedFile.endsWith('/')) {
+            getFileContent();
+        }
+    }, [selectedFile, getFileContent]);
 
 
- 
+
     return (
         <div className="playground-container">
+            <div className="user-header">
+                <div className="user-info">
+                    <img src={user.picture} alt={user.name} className="user-avatar" />
+                    <span className="user-name">{user.name}</span>
+                </div>
+                <button onClick={logout} className="logout-btn">Logout</button>
+            </div>
+
             <div className="editor-container">
                 <div className="files">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                         <h1>Files</h1>
                         <div>
-                            <button 
-                                onClick={() => {setShowCreateModal(true); setCreateType('file')}}
+                            <button
+                                onClick={() => { setShowCreateModal(true); setCreateType('file') }}
                                 style={{ marginRight: '5px', padding: '2px 6px', fontSize: '12px', cursor: 'pointer' }}
                                 title="New File"
                             >
                                 📄+
                             </button>
-                            <button 
-                                onClick={() => {setShowCreateModal(true); setCreateType('folder')}}
+                            <button
+                                onClick={() => { setShowCreateModal(true); setCreateType('folder') }}
                                 style={{ marginRight: '5px', padding: '2px 6px', fontSize: '12px', cursor: 'pointer' }}
                                 title="New Folder"
                             >
                                 📁+
                             </button>
-                            <button 
+                            <button
                                 onClick={() => selectedFile && deleteFileOrFolder(selectedFile)}
                                 disabled={!selectedFile || selectedFile === '/'}
-                                style={{ 
-                                    padding: '2px 6px', 
-                                    fontSize: '12px', 
+                                style={{
+                                    padding: '2px 6px',
+                                    fontSize: '12px',
                                     cursor: selectedFile && selectedFile !== '/' ? 'pointer' : 'not-allowed',
                                     backgroundColor: selectedFile && selectedFile !== '/' ? '#8f5252ff' : '#ccc',
                                     color: 'white',
@@ -196,8 +258,8 @@ function App() {
                             </button>
                         </div>
                     </div>
-                    
-                    <FileTree 
+
+                    <FileTree
                         onselect={(path) => {
                             setSelectedFile(path);
                             // Track current directory for new file/folder creation
@@ -209,10 +271,10 @@ function App() {
                                 pathParts.pop(); // Remove filename
                                 setCurrentPath(pathParts.join('/'));
                             }
-                        }} 
-                        tree={fileTree} 
+                        }}
+                        tree={fileTree}
                     />
-                    
+
                     {/* Create File/Folder Modal */}
                     {showCreateModal && (
                         <>
@@ -225,7 +287,7 @@ function App() {
                                 backgroundColor: 'rgba(0, 0, 0, 0.5)',
                                 zIndex: 999
                             }} onClick={() => setShowCreateModal(false)}></div>
-                            
+
                             <div style={{
                                 position: 'fixed',
                                 top: '50%',
@@ -253,13 +315,13 @@ function App() {
                                     autoFocus
                                 />
                                 <div style={{ textAlign: 'right' }}>
-                                    <button 
-                                        onClick={() => {setShowCreateModal(false); setCreateName('')}}
+                                    <button
+                                        onClick={() => { setShowCreateModal(false); setCreateName('') }}
                                         style={{ marginRight: '10px', padding: '5px 15px', border: '1px solid #ddd', background: '#f5f5f5', borderRadius: '3px', cursor: 'pointer' }}
                                     >
                                         Cancel
                                     </button>
-                                    <button 
+                                    <button
                                         onClick={createFileOrFolder}
                                         style={{ padding: '5px 15px', border: '1px solid #007acc', background: '#007acc', color: 'white', borderRadius: '3px', cursor: 'pointer' }}
                                     >
@@ -270,7 +332,7 @@ function App() {
                         </>
                     )}
                 </div>
-                
+
                 <div className="editor">
                     {selectedFile && <p>{selectedFile.replaceAll('/', ' -> ')}{isSaved ? ' Saved' : ' Unsaved'}</p>}
                     <AceEditor
@@ -286,12 +348,44 @@ function App() {
                     />
                 </div>
             </div>
-            
+
             <div className="terminal-container">
-                <Terminal />
+                <Terminal socket={socket} />
             </div>
         </div>
     );
+};
+
+function App() {
+    return (
+        <AuthProvider>
+            <AppContent />
+        </AuthProvider>
+    );
 }
+
+const AppContent = () => {
+    const { user, loading, login } = useAuth();
+
+    if (loading) {
+        return (
+            <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                height: '100vh',
+                fontSize: '1.2rem'
+            }}>
+                Loading...
+            </div>
+        );
+    }
+
+    if (!user) {
+        return <Auth onLogin={login} />;
+    }
+
+    return <MainApp />;
+};
 
 export default App

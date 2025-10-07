@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - NODE_ENV=development
+    env_file:
+      - server/.env
+    volumes:
+      - ./server:/app
+      - /var/run/docker.sock:/var/run/docker.sock  # For Docker-in-Docker
+      - user_data:/app/users
+    restart: unless-stopped
+    
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  user_data:

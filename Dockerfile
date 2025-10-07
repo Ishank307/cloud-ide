@@ -1,46 +1,26 @@
-# Stage 1: The 'builder' stage to build the React client
-FROM node:18-alpine AS builder
-
-WORKDIR /app
-
-# Copy client package files and install dependencies
-COPY client/package*.json ./client/
-RUN cd client && npm install
-
-# Copy the rest of the client source code
-COPY client/ ./client/
-
-# Build the client application
-# This creates a 'dist' folder inside /app/client/
-RUN cd client && npm run build
-
-
-# Stage 2: The 'final' stage for the production server
+# Backend-only Dockerfile for the new split architecture
 FROM node:18-alpine
 
-# We need build tools for node-pty to compile its native addons and bash for terminal
-RUN apk add --no-cache python3 make g++ bash
+# Install system dependencies for node-pty, Docker, and bash
+RUN apk add --no-cache python3 make g++ bash docker-cli
 
 WORKDIR /app
 
-# Copy server package files and install production dependencies
-COPY server/package*.json ./server/
-RUN cd server && npm install --production
+# Copy server package files and install dependencies
+COPY server/package*.json ./
+RUN npm install
 
 # Copy the server source code
-COPY server/ ./server/
+COPY server/ ./
 
-# Create the /user directory that the application logic requires
-# This is where the in-container terminal will operate
-RUN mkdir -p /app/server/user
+# Create directories for user workspaces
+RUN mkdir -p /app/users
 
-# Copy the built client files from the 'builder' stage
-COPY --from=builder /app/client/dist ./client/dist
+# Create .env file if it doesn't exist (for Docker builds)
+RUN touch .env
 
 # Expose the port the server runs on
 EXPOSE 8000
 
 # The command to start the server
-# We set the working directory to the server folder
-WORKDIR /app/server
 CMD ["node", "index.js"]

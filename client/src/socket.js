@@ -1,5 +1,21 @@
-import {io} from 'socket.io-client'
+import { io } from 'socket.io-client';
 
-const socket=io('http://localhost:8000')
+let socket = null;
 
-export default socket
+export const createSocket = (token, url = 'http://localhost:8000') => {
+    if (socket) {
+        socket.disconnect();
+    }
+    
+    socket = io(url, {
+        auth: {
+            token: token
+        }
+    });
+    
+    return socket;
+};
+
+export const getSocket = () => socket;
+
+export default { createSocket, getSocket };
