@@ -14,7 +14,7 @@ import { getFileIcon } from "./utils/fileIcons";
 
 
 const MainApp = () => {
-    const { user, token, logout } = useAuth();
+    const { user, token, logout, login } = useAuth();
     const [socket, setSocket] = useState(null);
     const [fileTree, setFileTree] = useState({});
     const [selectedFile, setSelectedFile] = useState('');
@@ -28,6 +28,18 @@ const MainApp = () => {
     const [terminalMinimized, setTerminalMinimized] = useState(false);
 
     const isSaved = selectedFileContent === code;
+
+    // Handle OAuth callback
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const authToken = urlParams.get('token');
+        
+        if (authToken && window.location.pathname === '/auth/callback') {
+            login(authToken);
+            // Clean up URL
+            window.history.replaceState({}, document.title, '/');
+        }
+    }, [login]);
 
     useEffect(() => {
         if (token && !socket) {
