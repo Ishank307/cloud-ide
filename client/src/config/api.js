@@ -1,6 +1,7 @@
-const API_BASE_URL = import.meta.env.PROD
-  ? 'https://your-backend.onrender.com'  // Update this with your actual Render URL after deployment
-  : 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 
+  (import.meta.env.PROD
+    ? 'https://cloud-ide-production.up.railway.app' 
+    : 'http://localhost:8000');
 
 export const API_ENDPOINTS = {
   AUTH_GOOGLE: `${API_BASE_URL}/auth/google`,
