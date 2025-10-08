@@ -4,15 +4,16 @@
   "description": "",
   "main": "index.js",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=18.0.0 <=22.0.0"
   },
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "build": "npm install --production"
+    "build": "rm -rf node_modules package-lock.json && npm install --production",
+    "postinstall": "echo 'Dependencies installed successfully'"
   },
   "dependencies": {
-    "express": "^4.18.2",
+    "express": "4.19.2",
     "socket.io": "^4.7.2",
     "node-pty": "^1.0.0",
     "cors": "^2.8.5",
