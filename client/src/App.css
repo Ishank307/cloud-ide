@@ -974,4 +974,33 @@ erminal Header Styling */
 /* Fix terminal height when minimized */
 .terminal-container.minimized #terminal {
     display: none;
+}/* Run and
+ Save Button Styles */
+.tab-actions {
+    display: flex;
+    gap: 4px;
+    margin-left: 8px;
+}
+
+.run-btn, .save-btn {
+    background: none;
+    border: none;
+    padding: 4px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background-color 0.2s;
+}
+
+.run-btn:hover:not(:disabled) {
+    background: rgba(34, 197, 94, 0.1);
+}
+
+.save-btn:hover:not(:disabled) {
+    background: rgba(59, 130, 246, 0.1);
+}
+
+.run-btn:disabled, .save-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }

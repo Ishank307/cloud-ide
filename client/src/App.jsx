@@ -33,7 +33,7 @@ const MainApp = () => {
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
         const authToken = urlParams.get('token');
-        
+
         if (authToken && window.location.pathname === '/auth/callback') {
             login(authToken);
             // Clean up URL
@@ -189,6 +189,83 @@ const MainApp = () => {
         setSelectedFileContent('');
     }, [selectedFile]);
 
+    const isExecutableFile = (filename) => {
+        if (!filename) return false;
+        const ext = filename.split('.').pop()?.toLowerCase();
+        return ['js', 'py', 'java', 'cpp', 'c', 'go', 'rs', 'php', 'rb', 'ts', 'jsx', 'tsx'].includes(ext);
+    };
+
+    const saveFile = () => {
+        if (!selectedFile || !socket) return;
+        socket.emit("file:change", {
+            path: selectedFile,
+            content: code,
+        });
+    };
+
+    const runCode = () => {
+        if (!selectedFile || !socket) return;
+
+        // Save file first
+        saveFile();
+
+        // Get file extension and path info
+        const ext = selectedFile.split('.').pop()?.toLowerCase();
+        const filename = selectedFile.split('/').pop();
+        const filePath = selectedFile.startsWith('/') ? selectedFile.substring(1) : selectedFile;
+        const directory = filePath.includes('/') ? filePath.substring(0, filePath.lastIndexOf('/')) : '';
+
+        let command = '';
+
+        switch (ext) {
+            case 'js':
+            case 'jsx':
+                command = `node "${filename}"`;
+                break;
+            case 'py':
+                command = `python3 "${filename}" || python "${filename}"`;
+                break;
+            case 'java':
+                const className = filename.replace('.java', '');
+                command = `javac "${filename}" && java "${className}"`;
+                break;
+            case 'cpp':
+                const cppOut = filename.replace('.cpp', '');
+                command = `g++ "${filename}" -o "${cppOut}" && ./"${cppOut}"`;
+                break;
+            case 'c':
+                const cOut = filename.replace('.c', '');
+                command = `gcc "${filename}" -o "${cOut}" && ./"${cOut}"`;
+                break;
+            case 'go':
+                command = `go run "${filename}"`;
+                break;
+            case 'rs':
+                command = `rustc "${filename}" && ./"${filename.replace('.rs', '')}"`;
+                break;
+            case 'php':
+                command = `php "${filename}"`;
+                break;
+            case 'rb':
+                command = `ruby "${filename}"`;
+                break;
+            case 'ts':
+            case 'tsx':
+                command = `npx ts-node "${filename}"`;
+                break;
+            default:
+                command = `echo "Unsupported file type: ${ext}"`;
+        }
+
+        // Navigate to correct directory and run command
+        socket.emit('terminal:write', `echo "🚀 Running ${filename}..."\r`);
+        if (directory) {
+            socket.emit('terminal:write', `cd ~ && cd "${directory}" && ${command} && cd ~\r`);
+        } else {
+            socket.emit('terminal:write', `${command}\r`);
+        }
+    };
+
     useEffect(() => {
         if (selectedFile && selectedFileContent !== null) {
             setCode(selectedFileContent);
@@ -242,9 +319,9 @@ const MainApp = () => {
         <div className="playground-container">
             <div className="user-header">
                 <div className="user-info">
-                    <img 
-                        src={user.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=6366f1&color=fff`} 
-                        alt={user.name} 
+                    <img
+                        src={user.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=6366f1&color=fff`}
+                        alt={user.name}
                         className="user-avatar"
                         onError={(e) => {
                             e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=6366f1&color=fff`;
@@ -426,6 +503,24 @@ const MainApp = () => {
                                         </span>
                                         <div className={`save-indicator ${isSaved ? 'saved' : 'unsaved'}`}>
                                         </div>
+                                        <div className="tab-actions">
+                                            <button
+                                                onClick={runCode}
+                                                className="run-btn"
+                                                disabled={!isExecutableFile(selectedFile)}
+                                                title="Run code"
+                                            >
+                                                ▶️ Run
+                                            </button>
+                                            <button
+                                                onClick={saveFile}
+                                                className="save-btn"
+                                                disabled={isSaved}
+                                                title={isSaved ? 'File saved' : 'Save file'}
+                                            >
+                                                {isSaved ? '✓ Saved' : '💾 Save'}
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
                                 {!selectedFile && (
@@ -485,21 +580,31 @@ const MainApp = () => {
                     </div>
                     <div className="terminal-actions">
                         {!terminalMinimized && (
-                            <button
-                                className="terminal-action-btn"
-                                onClick={() => {
-                                    const terminal = document.querySelector('#terminal .xterm-screen');
-                                    if (terminal) {
-                                        terminal.scrollTop = terminal.scrollHeight;
-                                    }
-                                }}
-                                title="Scroll to Bottom (Ctrl+End)"
-                            >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <polyline points="7,13 12,18 17,13" />
-                                    <polyline points="7,6 12,11 17,6" />
-                                </svg>
-                            </button>
+                            <>
+                                <button
+                                    className="terminal-action-btn"
+                                    onClick={() => {
+                                        const terminal = document.querySelector('#terminal .xterm-viewport');
+                                        if (terminal) {
+                                            terminal.scrollTop = terminal.scrollHeight;
+                                        }
+                                    }}
+                                    title="Scroll to Bottom"
+                                >
+                                    ⬇️
+                                </button>
+                                <button
+                                    className="terminal-action-btn"
+                                    onClick={() => {
+                                        if (socket) {
+                                            socket.emit('terminal:write', 'clear\r');
+                                        }
+                                    }}
+                                    title="Clear Terminal"
+                                >
+                                    🗑️
+                                </button>
+                            </>
                         )}
                         <button
                             className="terminal-toggle"
@@ -524,7 +629,13 @@ const MainApp = () => {
                         </button>
                     </div>
                 </div>
-                {!terminalMinimized && <Terminal socket={socket} />}
+                <div id="terminal" style={{
+                    height: terminalMinimized ? '0px' : '300px',
+                    overflow: 'hidden',
+                    transition: 'height 0.3s ease'
+                }}>
+                    {!terminalMinimized && <Terminal socket={socket} />}
+                </div>
             </div>
         </div>
     );

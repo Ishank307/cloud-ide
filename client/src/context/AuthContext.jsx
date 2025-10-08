@@ -24,24 +24,25 @@ export const AuthProvider = ({ children }) => {
                     'Authorization': `Bearer ${token}`
                 }
             })
-            .then(res => res.json())
-            .then(data => {
-                if (data.user) {
-                    setUser(data.user);
-                } else {
-                    // Invalid token
+                .then(res => res.json())
+                .then(data => {
+                    if (data.user) {
+                        console.log('User data received:', data.user);
+                        setUser(data.user);
+                    } else {
+                        // Invalid token
+                        localStorage.removeItem('token');
+                        setToken(null);
+                    }
+                })
+                .catch(err => {
+                    console.error('Auth check failed:', err);
                     localStorage.removeItem('token');
                     setToken(null);
-                }
-            })
-            .catch(err => {
-                console.error('Auth check failed:', err);
-                localStorage.removeItem('token');
-                setToken(null);
-            })
-            .finally(() => {
-                setLoading(false);
-            });
+                })
+                .finally(() => {
+                    setLoading(false);
+                });
         } else {
             setLoading(false);
         }
@@ -56,7 +57,7 @@ export const AuthProvider = ({ children }) => {
         setUser(null);
         setToken(null);
         localStorage.removeItem('token');
-        
+
         // Call backend logout endpoint
         fetch(API_ENDPOINTS.AUTH_LOGOUT, {
             method: 'POST',
