@@ -242,7 +242,14 @@ const MainApp = () => {
         <div className="playground-container">
             <div className="user-header">
                 <div className="user-info">
-                    <img src={user.picture} alt={user.name} className="user-avatar" />
+                    <img 
+                        src={user.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=6366f1&color=fff`} 
+                        alt={user.name} 
+                        className="user-avatar"
+                        onError={(e) => {
+                            e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=6366f1&color=fff`;
+                        }}
+                    />
                     <span className="user-name">{user.name}</span>
                 </div>
                 <button onClick={logout} className="logout-btn">Logout</button>
