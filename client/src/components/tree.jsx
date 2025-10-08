@@ -1,11 +1,13 @@
 import React from 'react'
+import { getFileIcon, getFolderIcon } from '../utils/fileIcons'
 
 const FileTreeNode = ({ fileName, nodes, onselect, path }) => {
     const isDir = !!nodes;
+    const icon = isDir ? getFolderIcon(fileName) : getFileIcon(fileName);
     
     return (
         <div style={{ marginLeft: '10px' }}>
-            <p 
+            <div 
                 className={isDir ? "folder-node" : "file-node"}
                 onClick={(e) => {
                     e.stopPropagation();
@@ -17,12 +19,17 @@ const FileTreeNode = ({ fileName, nodes, onselect, path }) => {
                 style={{ 
                     margin: 0,
                     cursor: 'pointer',
-                    padding: '2px 4px',
-                    borderRadius: '3px'
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '13px'
                 }}
             >
-                {fileName}
-            </p>
+                <span className="file-icon" style={{ fontSize: '16px' }}>{icon}</span>
+                <span className="file-name">{fileName}</span>
+            </div>
             
             {nodes && fileName !== 'node_modules' && typeof nodes === 'object' && Object.keys(nodes).length > 0 && (
                 <ul style={{ listStyle: 'none', paddingLeft: '10px', margin: '0' }}>

@@ -10,6 +10,7 @@ import "ace-builds/src-noconflict/theme-github";
 import "ace-builds/src-noconflict/ext-language_tools";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { API_ENDPOINTS, SOCKET_URL } from "./config/api";
+import { getFileIcon } from "./utils/fileIcons";
 
 
 const MainApp = () => {
@@ -23,6 +24,8 @@ const MainApp = () => {
     const [createType, setCreateType] = useState('file');
     const [createName, setCreateName] = useState('');
     const [currentPath, setCurrentPath] = useState('');
+    const [contextMenu, setContextMenu] = useState({ show: false, x: 0, y: 0, type: 'editor' });
+    const [terminalMinimized, setTerminalMinimized] = useState(false);
 
     const isSaved = selectedFileContent === code;
 
@@ -140,6 +143,18 @@ const MainApp = () => {
         }
     }, [socket]);
 
+    // Close context menu on outside click
+    useEffect(() => {
+        const handleClickOutside = () => {
+            setContextMenu({ show: false, x: 0, y: 0, type: 'editor' });
+        };
+
+        if (contextMenu.show) {
+            document.addEventListener('click', handleClickOutside);
+            return () => document.removeEventListener('click', handleClickOutside);
+        }
+    }, [contextMenu.show]);
+
 
     useEffect(() => {
         if (socket && code && !isSaved && selectedFile && !selectedFile.endsWith('/')) {
@@ -222,39 +237,50 @@ const MainApp = () => {
             </div>
 
             <div className="editor-container">
-                <div className="files">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                        <h1>Files</h1>
-                        <div>
+                <div className="sidebar">
+                    <div className="sidebar-header">
+                        <div className="sidebar-title">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                            </svg>
+                            <span>Explorer</span>
+                        </div>
+                        <div className="sidebar-actions">
                             <button
+                                className="action-btn"
                                 onClick={() => { setShowCreateModal(true); setCreateType('file') }}
-                                style={{ marginRight: '5px', padding: '2px 6px', fontSize: '12px', cursor: 'pointer' }}
                                 title="New File"
                             >
-                                📄+
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                    <polyline points="14,2 14,8 20,8" />
+                                    <line x1="12" y1="18" x2="12" y2="12" />
+                                    <line x1="9" y1="15" x2="15" y2="15" />
+                                </svg>
                             </button>
                             <button
+                                className="action-btn"
                                 onClick={() => { setShowCreateModal(true); setCreateType('folder') }}
-                                style={{ marginRight: '5px', padding: '2px 6px', fontSize: '12px', cursor: 'pointer' }}
                                 title="New Folder"
                             >
-                                📁+
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                                    <line x1="12" y1="15" x2="12" y2="9" />
+                                    <line x1="9" y1="12" x2="15" y2="12" />
+                                </svg>
                             </button>
                             <button
+                                className="action-btn delete-btn"
                                 onClick={() => selectedFile && deleteFileOrFolder(selectedFile)}
                                 disabled={!selectedFile || selectedFile === '/'}
-                                style={{
-                                    padding: '2px 6px',
-                                    fontSize: '12px',
-                                    cursor: selectedFile && selectedFile !== '/' ? 'pointer' : 'not-allowed',
-                                    backgroundColor: selectedFile && selectedFile !== '/' ? '#8f5252ff' : '#ccc',
-                                    color: 'white',
-                                    border: 'none',
-                                    borderRadius: '3px'
-                                }}
                                 title={selectedFile ? `Delete ${selectedFile}` : "Select a file or folder to delete"}
                             >
-                                🗑️
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <polyline points="3,6 5,6 21,6" />
+                                    <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2" />
+                                    <line x1="10" y1="11" x2="10" y2="17" />
+                                    <line x1="14" y1="11" x2="14" y2="17" />
+                                </svg>
                             </button>
                         </div>
                     </div>
@@ -277,80 +303,209 @@ const MainApp = () => {
 
                     {/* Create File/Folder Modal */}
                     {showCreateModal && (
-                        <>
-                            <div style={{
-                                position: 'fixed',
-                                top: 0,
-                                left: 0,
-                                width: '100%',
-                                height: '100%',
-                                backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                                zIndex: 999
-                            }} onClick={() => setShowCreateModal(false)}></div>
-
-                            <div style={{
-                                position: 'fixed',
-                                top: '50%',
-                                left: '50%',
-                                transform: 'translate(-50%, -50%)',
-                                background: 'white',
-                                border: '1px solid #ccc',
-                                padding: '20px',
-                                borderRadius: '5px',
-                                boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-                                zIndex: 1000,
-                                minWidth: '300px'
-                            }}>
+                        <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
+                            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                                 <h3>Create {createType}</h3>
-                                <p style={{ fontSize: '12px', color: '#666', margin: '5px 0' }}>
-                                    Location: {currentPath || '/'}
-                                </p>
+                                <p>Location: {currentPath || '/'}</p>
                                 <input
                                     type="text"
                                     value={createName}
                                     onChange={(e) => setCreateName(e.target.value)}
                                     placeholder={`Enter ${createType} name`}
-                                    style={{ width: '100%', padding: '8px', marginBottom: '15px', border: '1px solid #ddd', borderRadius: '3px' }}
                                     onKeyPress={(e) => e.key === 'Enter' && createFileOrFolder()}
                                     autoFocus
                                 />
-                                <div style={{ textAlign: 'right' }}>
+                                <div className="modal-actions">
                                     <button
+                                        className="modal-btn cancel"
                                         onClick={() => { setShowCreateModal(false); setCreateName('') }}
-                                        style={{ marginRight: '10px', padding: '5px 15px', border: '1px solid #ddd', background: '#f5f5f5', borderRadius: '3px', cursor: 'pointer' }}
                                     >
                                         Cancel
                                     </button>
                                     <button
+                                        className="modal-btn primary"
                                         onClick={createFileOrFolder}
-                                        style={{ padding: '5px 15px', border: '1px solid #007acc', background: '#007acc', color: 'white', borderRadius: '3px', cursor: 'pointer' }}
                                     >
                                         Create
                                     </button>
                                 </div>
                             </div>
-                        </>
+                        </div>
+                    )}
+
+                    {/* Context Menu */}
+                    {contextMenu.show && (
+                        <div
+                            className="context-menu"
+                            style={{
+                                position: 'fixed',
+                                top: contextMenu.y,
+                                left: contextMenu.x,
+                                zIndex: 1000
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="context-menu-item" onClick={() => {
+                                setShowCreateModal(true);
+                                setCreateType('file');
+                                setContextMenu({ show: false, x: 0, y: 0, type: 'editor' });
+                            }}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                    <polyline points="14,2 14,8 20,8" />
+                                    <line x1="12" y1="18" x2="12" y2="12" />
+                                    <line x1="9" y1="15" x2="15" y2="15" />
+                                </svg>
+                                New File
+                            </div>
+                            <div className="context-menu-item" onClick={() => {
+                                setShowCreateModal(true);
+                                setCreateType('folder');
+                                setContextMenu({ show: false, x: 0, y: 0, type: 'editor' });
+                            }}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                                    <line x1="12" y1="15" x2="12" y2="9" />
+                                    <line x1="9" y1="12" x2="15" y2="12" />
+                                </svg>
+                                New Folder
+                            </div>
+                            {selectedFile && selectedFile !== '/' && (
+                                <>
+                                    <div className="context-menu-divider"></div>
+                                    <div className="context-menu-item danger" onClick={() => {
+                                        deleteFileOrFolder(selectedFile);
+                                        setContextMenu({ show: false, x: 0, y: 0, type: 'editor' });
+                                    }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <polyline points="3,6 5,6 21,6" />
+                                            <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2" />
+                                            <line x1="10" y1="11" x2="10" y2="17" />
+                                            <line x1="14" y1="11" x2="14" y2="17" />
+                                        </svg>
+                                        Delete {selectedFile.split('/').pop()}
+                                    </div>
+                                </>
+                            )}
+                        </div>
                     )}
                 </div>
 
-                <div className="editor">
-                    {selectedFile && <p>{selectedFile.replaceAll('/', ' -> ')}{isSaved ? ' Saved' : ' Unsaved'}</p>}
-                    <AceEditor
-                        value={code}
-                        onChange={(e) => setCode(e)}
-                        name="editor"
-                        theme="github"
-                        enableSnippets={{
-                            enableBasicAutocompletion: true,
-                            enableLiveAutoccompletion: true,
-                            enableSnippets: true,
-                        }}
-                    />
+                <div className="main-content">
+                    <div className="editor-section">
+                        <div className="editor-header">
+                            <div className="tab-bar">
+                                {selectedFile && (
+                                    <div className="tab active">
+                                        <div className="tab-icon">
+                                            <span style={{ fontSize: '16px' }}>
+                                                {getFileIcon(selectedFile.split('/').pop())}
+                                            </span>
+                                        </div>
+                                        <span className="tab-name">
+                                            {selectedFile.split('/').pop() || 'untitled'}
+                                        </span>
+                                        <div className={`save-indicator ${isSaved ? 'saved' : 'unsaved'}`}>
+                                        </div>
+                                    </div>
+                                )}
+                                {!selectedFile && (
+                                    <div className="no-file-selected">
+                                        <span>Select a file to start editing</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div
+                            className="editor-content"
+                            onContextMenu={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setContextMenu({
+                                    show: true,
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                    type: 'editor'
+                                });
+                            }}
+                        >
+                            <AceEditor
+                                value={code}
+                                onChange={(e) => setCode(e)}
+                                name="editor"
+                                theme="one_dark"
+                                mode="javascript"
+                                width="100%"
+                                height="100%"
+                                fontSize={14}
+                                showPrintMargin={false}
+                                showGutter={true}
+                                highlightActiveLine={true}
+                                setOptions={{
+                                    enableBasicAutocompletion: true,
+                                    enableLiveAutocompletion: true,
+                                    enableSnippets: true,
+                                    showLineNumbers: true,
+                                    tabSize: 2,
+                                    useWorker: false
+                                }}
+                            />
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div className="terminal-container">
-                <Terminal socket={socket} />
+            <div className={`terminal-container ${terminalMinimized ? 'minimized' : ''}`}>
+                <div className="terminal-header">
+                    <div className="terminal-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="4,17 10,11 4,5" />
+                            <line x1="12" y1="19" x2="20" y2="19" />
+                        </svg>
+                        <span>Terminal</span>
+                    </div>
+                    <div className="terminal-actions">
+                        {!terminalMinimized && (
+                            <button
+                                className="terminal-action-btn"
+                                onClick={() => {
+                                    const terminal = document.querySelector('#terminal .xterm-screen');
+                                    if (terminal) {
+                                        terminal.scrollTop = terminal.scrollHeight;
+                                    }
+                                }}
+                                title="Scroll to Bottom (Ctrl+End)"
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <polyline points="7,13 12,18 17,13" />
+                                    <polyline points="7,6 12,11 17,6" />
+                                </svg>
+                            </button>
+                        )}
+                        <button
+                            className="terminal-toggle"
+                            onClick={() => setTerminalMinimized(!terminalMinimized)}
+                            title={terminalMinimized ? "Maximize Terminal" : "Minimize Terminal"}
+                        >
+                            {terminalMinimized ? (
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <polyline points="15,3 21,3 21,9" />
+                                    <polyline points="9,21 3,21 3,15" />
+                                    <line x1="21" y1="3" x2="14" y2="10" />
+                                    <line x1="3" y1="21" x2="10" y2="14" />
+                                </svg>
+                            ) : (
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <polyline points="4,14 10,14 10,20" />
+                                    <polyline points="20,10 14,10 14,4" />
+                                    <line x1="14" y1="10" x2="21" y2="3" />
+                                    <line x1="3" y1="21" x2="10" y2="14" />
+                                </svg>
+                            )}
+                        </button>
+                    </div>
+                </div>
+                {!terminalMinimized && <Terminal socket={socket} />}
             </div>
         </div>
     );

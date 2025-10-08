@@ -59,9 +59,30 @@ const io = new SocketServer(server, {
 io.use(authenticateSocket);
 
 const userPtyProcesses = new Map(); // userId -> ptyProcess
+const userSockets = new Map(); // userId -> Set of socket IDs
+const userWatchers = new Map(); // userId -> watcher
+
+// Clean up inactive PTY processes every 5 minutes
+setInterval(() => {
+    for (const [userId, ptyProcess] of userPtyProcesses.entries()) {
+        if (!userSockets.has(userId) || userSockets.get(userId).size === 0) {
+            console.log(`Cleaning up inactive PTY for user ${userId}`);
+            if (ptyProcess && !ptyProcess.killed) {
+                ptyProcess.kill();
+            }
+            userPtyProcesses.delete(userId);
+        }
+    }
+}, 5 * 60 * 1000);
 
 io.on('connection', async (socket) => {
     console.log('User connected:', socket.user.email);
+    
+    // Track user sockets
+    if (!userSockets.has(socket.user.id)) {
+        userSockets.set(socket.user.id, new Set());
+    }
+    userSockets.get(socket.user.id).add(socket.id);
 
     try {
         // Create or get user container (skip in development)
@@ -74,8 +95,10 @@ io.on('connection', async (socket) => {
         const userDir = path.resolve(`./users/${socket.user.id}`);
         await fs.mkdir(userDir, { recursive: true });
 
-        // Create PTY process for this user if not exists
-        if (!userPtyProcesses.has(socket.user.id)) {
+        // Get or create PTY process for this user
+        let ptyProcess = userPtyProcesses.get(socket.user.id);
+        
+        if (!ptyProcess || ptyProcess.killed) {
             const pty = require('node-pty');
 
             // Use bash if available, fallback to sh
@@ -87,10 +110,10 @@ io.on('connection', async (socket) => {
                 console.log('Bash not found, using sh');
             }
 
-            console.log(`Spawning ${shell} in directory: ${userDir}`);
+            console.log(`Creating new PTY process for user ${socket.user.email}`);
 
             try {
-                const ptyProcess = pty.spawn(shell, [], {
+                ptyProcess = pty.spawn(shell, [], {
                     name: 'xterm-color',
                     cols: 80,
                     rows: 30,
@@ -105,32 +128,53 @@ io.on('connection', async (socket) => {
                     }
                 });
 
-                // Set up data handler
+                // Set up data handler - broadcast to all user's sockets
                 ptyProcess.onData((data) => {
-                    socket.emit('terminal:data', data);
+                    const userSocketSet = userSockets.get(socket.user.id);
+                    if (userSocketSet) {
+                        userSocketSet.forEach(socketId => {
+                            const userSocket = io.sockets.sockets.get(socketId);
+                            if (userSocket) {
+                                userSocket.emit('terminal:data', data);
+                            }
+                        });
+                    }
                 });
 
                 // Handle PTY errors and exit
                 ptyProcess.onExit((exitCode, signal) => {
-                    console.log(`PTY process exited with code ${JSON.stringify(exitCode)}, signal ${signal}`);
+                    console.log(`PTY process exited for user ${socket.user.email}: code ${JSON.stringify(exitCode)}, signal ${signal}`);
                     userPtyProcesses.delete(socket.user.id);
-                    socket.emit('terminal:data', '\r\nTerminal session ended. Please refresh to reconnect.\r\n');
+                    
+                    // Notify all user's sockets
+                    const userSocketSet = userSockets.get(socket.user.id);
+                    if (userSocketSet) {
+                        userSocketSet.forEach(socketId => {
+                            const userSocket = io.sockets.sockets.get(socketId);
+                            if (userSocket) {
+                                userSocket.emit('terminal:data', '\r\nTerminal session ended. Reconnecting...\r\n');
+                            }
+                        });
+                    }
                 });
 
                 userPtyProcesses.set(socket.user.id, ptyProcess);
                 console.log(`Created PTY process for user ${socket.user.email}`);
 
-                // Send welcome message after PTY is ready
+                // Send welcome message
                 setTimeout(() => {
                     if (!ptyProcess.killed) {
                         socket.emit('terminal:data', `Welcome to your workspace!\r\nDirectory: ${userDir}\r\n`);
                     }
-                }, 1000);
+                }, 500);
 
             } catch (error) {
                 console.error('Error creating PTY process:', error);
                 socket.emit('terminal:data', `Error creating terminal: ${error.message}\r\n`);
             }
+        } else {
+            // PTY exists, just send welcome message to this socket
+            socket.emit('terminal:data', 'Terminal reconnected!\r\n');
         }
 
         socket.on('terminal:write', (data) => {
@@ -142,7 +186,9 @@ io.on('connection', async (socket) => {
                     containerManager.updateUserActivity(socket.user.id);
                 } catch (error) {
                     console.error('Error writing to PTY:', error);
-                    socket.emit('terminal:data', 'Terminal error occurred.\r\n');
+                    socket.emit('terminal:data', 'Terminal error occurred. Reconnecting...\r\n');
+                    // Remove the broken PTY so it gets recreated
+                    userPtyProcesses.delete(socket.user.id);
                 }
             } else {
                 socket.emit('terminal:data', 'Terminal not ready. Please refresh.\r\n');
@@ -154,23 +200,54 @@ io.on('connection', async (socket) => {
             containerManager.updateUserActivity(socket.user.id);
         });
 
-        // Watch user's directory for file changes
-        const watcher = chokidar.watch(userDir);
-        watcher.on('all', (_, filePath) => {
-            socket.emit('file:refresh', filePath);
-        });
+        // Set up file watcher (one per user, not per socket)
+        if (!userWatchers.has(socket.user.id)) {
+            const watcher = chokidar.watch(userDir);
+            watcher.on('all', (_, filePath) => {
+                // Broadcast to all user's sockets
+                const userSocketSet = userSockets.get(socket.user.id);
+                if (userSocketSet) {
+                    userSocketSet.forEach(socketId => {
+                        const userSocket = io.sockets.sockets.get(socketId);
+                        if (userSocket) {
+                            userSocket.emit('file:refresh', filePath);
+                        }
+                    });
+                }
+            });
+            userWatchers.set(socket.user.id, watcher);
+        }
 
         socket.on('disconnect', () => {
             console.log('User disconnected:', socket.user.email);
-            watcher.close();
-
-            // Clean up PTY process after some time (but keep it for reconnection)
-            setTimeout(() => {
-                const ptyProcess = userPtyProcesses.get(socket.user.id);
-                if (ptyProcess) {
-                    console.log(`PTY process kept alive for user ${socket.user.email}`);
+            
+            // Remove this socket from user's socket set
+            const userSocketSet = userSockets.get(socket.user.id);
+            if (userSocketSet) {
+                userSocketSet.delete(socket.id);
+                
+                // If no more sockets for this user, clean up watcher
+                if (userSocketSet.size === 0) {
+                    const watcher = userWatchers.get(socket.user.id);
+                    if (watcher) {
+                        watcher.close();
+                        userWatchers.delete(socket.user.id);
+                    }
+                    
+                    // Keep PTY alive for 2 minutes for potential reconnection
+                    setTimeout(() => {
+                        const currentSocketSet = userSockets.get(socket.user.id);
+                        if (!currentSocketSet || currentSocketSet.size === 0) {
+                            const ptyProcess = userPtyProcesses.get(socket.user.id);
+                            if (ptyProcess && !ptyProcess.killed) {
+                                console.log(`Cleaning up PTY for inactive user ${socket.user.email}`);
+                                ptyProcess.kill();
+                                userPtyProcesses.delete(socket.user.id);
+                            }
+                        }
+                    }, 2 * 60 * 1000); // 2 minutes
                 }
-            }, 1000);
+            }
         });
 
     } catch (error) {
