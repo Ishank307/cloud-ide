@@ -345,7 +345,7 @@ app.use(express.static(path.join(__dirname, '..', 'client/build')));
 const PORT = process.env.PORT || 8000;
 
 server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server is running on port ${PORT}`)
+    console.log(`🚀 Server is running on port ${PORT}`)
 })
 
 async function generatefile(directory) {
