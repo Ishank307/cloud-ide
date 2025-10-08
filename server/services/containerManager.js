@@ -9,11 +9,20 @@ class ContainerManager {
 
     async createUserContainer(userId) {
         try {
-            // Skip container creation in development
-            if (process.env.NODE_ENV !== 'production') {
-                console.log(`Skipping container creation for user ${userId} in development mode`);
-                return { id: 'dev-mode', userId, createdAt: new Date(), lastActivity: new Date() };
+            // Check if Docker is available
+            try {
+                await docker.ping();
+                console.log('Docker is available, creating container...');
+            } catch (dockerError) {
+                console.log('Docker not available, using local environment');
+                return { id: 'local-mode', userId, createdAt: new Date(), lastActivity: new Date() };
             }
+
+            // Enable container creation in development for testing
+            // if (process.env.NODE_ENV !== 'production') {
+            //     console.log(`Skipping container creation for user ${userId} in development mode`);
+            //     return { id: 'dev-mode', userId, createdAt: new Date(), lastActivity: new Date() };
+            // }
 
             // Check if container already exists
             if (this.userContainers.has(userId)) {
