@@ -98,11 +98,19 @@ const Terminal = ({ socket }) => {
         // Wait for socket connection then initialize terminal
         if (socket.connected) {
             console.log('Socket already connected, initializing terminal...');
-            setTimeout(() => terminal.write('Initializing shell...\r\n'), 100);
+            setTimeout(() => {
+                terminal.write('Initializing shell...\r\n');
+                // Request terminal session from backend
+                socket.emit('terminal:start');
+            }, 500);
         } else {
             socket.on('connect', () => {
                 console.log('Socket connected, initializing terminal...');
-                setTimeout(() => terminal.write('Initializing shell...\r\n'), 100);
+                setTimeout(() => {
+                    terminal.write('Initializing shell...\r\n');
+                    // Request terminal session from backend
+                    socket.emit('terminal:start');
+                }, 500);
             });
         }
 
