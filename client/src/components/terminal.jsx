@@ -92,11 +92,18 @@ const Terminal = ({ socket }) => {
         socket.on('disconnect', handleDisconnect);
         socket.on('reconnect', handleReconnect);
 
-        // Initial connection message and request terminal session
+        // Initial connection message
+        terminal.write('[Terminal ready]\r\n');
+        
+        // Wait for socket connection then initialize terminal
         if (socket.connected) {
-            terminal.write('[Terminal ready]\r\n');
-            // Request a new terminal session
-            socket.emit('terminal:init');
+            console.log('Socket already connected, initializing terminal...');
+            setTimeout(() => terminal.write('Initializing shell...\r\n'), 100);
+        } else {
+            socket.on('connect', () => {
+                console.log('Socket connected, initializing terminal...');
+                setTimeout(() => terminal.write('Initializing shell...\r\n'), 100);
+            });
         }
 
         return () => {
