@@ -92,9 +92,11 @@ const Terminal = ({ socket }) => {
         socket.on('disconnect', handleDisconnect);
         socket.on('reconnect', handleReconnect);
 
-        // Initial connection message
+        // Initial connection message and request terminal session
         if (socket.connected) {
             terminal.write('[Terminal ready]\r\n');
+            // Request a new terminal session
+            socket.emit('terminal:init');
         }
 
         return () => {
