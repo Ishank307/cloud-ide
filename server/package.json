@@ -4,26 +4,24 @@
   "description": "",
   "main": "index.js",
   "engines": {
-    "node": ">=18.0.0 <=22.0.0"
+    "node": ">=18.0.0"
   },
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js",
-    "build": "rm -rf node_modules package-lock.json && npm install --production",
-    "postinstall": "echo 'Dependencies installed successfully'"
+    "dev": "nodemon index.js"
   },
   "dependencies": {
-    "express": "4.19.2",
-    "socket.io": "^4.7.2",
-    "node-pty": "^1.0.0",
-    "cors": "^2.8.5",
-    "chokidar": "^3.5.3",
-    "passport": "^0.7.0",
-    "passport-google-oauth20": "^2.0.0",
-    "express-session": "^1.17.3",
-    "jsonwebtoken": "^9.0.2",
-    "dotenv": "^16.3.1",
-    "dockerode": "^4.0.2"
+    "express": "4.21.2",
+    "socket.io": "4.8.1",
+    "node-pty": "1.0.0",
+    "cors": "2.8.5",
+    "chokidar": "3.5.3",
+    "passport": "0.7.0",
+    "passport-google-oauth20": "2.0.0",
+    "express-session": "1.18.2",
+    "jsonwebtoken": "9.0.2",
+    "dotenv": "16.3.1",
+    "dockerode": "4.0.9"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
