@@ -1,115 +1,546 @@
 import Terminal from "./components/terminal"
+import Auth from "./components/Auth";
 import './App.css';
 import { useCallback, useEffect, useState } from "react";
 import FileTree from "./components/tree";
-import socket from "./socket";
+import socketManager from "./socket";
 import AceEditor from 'react-ace';
 import "ace-builds/src-noconflict/mode-java";
 import "ace-builds/src-noconflict/theme-github";
 import "ace-builds/src-noconflict/ext-language_tools";
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import { API_ENDPOINTS, SOCKET_URL } from "./config/api";
+import { getFileIcon } from "./utils/fileIcons";
 
 
-function App() {
-    const [fileTree,setFileTree]=useState({});
+const MainApp = () => {
+    const { user, token, logout } = useAuth();
+    const [socket, setSocket] = useState(null);
+    const [fileTree, setFileTree] = useState({});
+    const [selectedFile, setSelectedFile] = useState('');
+    const [selectedFileContent, setSelectedFileContent] = useState('');
+    const [code, setCode] = useState('');
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [createType, setCreateType] = useState('file');
+    const [createName, setCreateName] = useState('');
+    const [currentPath, setCurrentPath] = useState('');
+    const [contextMenu, setContextMenu] = useState({ show: false, x: 0, y: 0, type: 'editor' });
+    const [terminalMinimized, setTerminalMinimized] = useState(false);
 
-    const [selectedFile,setSelectedFile]=useState('');
-    const [selectedFileContent,setSelectedFileContent]=useState('');
-    const[code,setCode]=useState('');
-    
-    const isSaved = selectedFileContent ===code;
-    
+    const isSaved = selectedFileContent === code;
 
-    const getFileTree = async () =>{
-    const response= await fetch("http://localhost:8000/files");
-    const result = await response.json();
-    console.log('Full API response:', result);
-    console.log('result.tree:', result.tree); 
-    setFileTree(result.tree);
- }
+    useEffect(() => {
+        if (token && !socket) {
+            const newSocket = socketManager.createSocket(token, SOCKET_URL);
+            setSocket(newSocket);
+        }
+    }, [token, socket]);
 
-   useEffect(() => {
+
+    const getFileTree = async () => {
+        if (!token) return;
+
+        try {
+            const response = await fetch(API_ENDPOINTS.FILES, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (response.status === 401) {
+                logout();
+                return;
+            }
+
+            const result = await response.json();
+            setFileTree(result.tree);
+        } catch (error) {
+            console.error('Error fetching file tree:', error);
+        }
+    };
+
+
+    const createFileOrFolder = async () => {
+        if (!createName.trim()) return;
+        const fullPath = currentPath ? `${currentPath}/${createName}` : `/${createName}`;
+
+        try {
+            const response = await fetch(API_ENDPOINTS.FILES_CREATE, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    path: fullPath,
+                    type: createType
+                })
+            });
+
+
+            if (response.ok) {
+                getFileTree();
+                setShowCreateModal(false);
+                setCreateName('');
+            } else {
+                const error = await response.json();
+                alert(`Error creating ${createType}:${error.error}`)
+            }
+
+        }
+        catch (error) {
+            console.error('Error creating file/folder', error);
+            alert(`Error creating ${createType}`);
+        }
+    };
+
+
+    const deleteFileOrFolder = async (filePath) => {
+        if (!confirm(`Are you sure you want to delete ${filePath}?`)) return;
+
+        try {
+            const response = await fetch(API_ENDPOINTS.FILES_DELETE, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    path: filePath
+                })
+            });
+
+            if (response.ok) {
+                getFileTree(); // Refresh the file tree
+                // If deleted file was selected, clear the editor
+                if (selectedFile === filePath) {
+                    setSelectedFile('');
+                    setSelectedFileContent('');
+                    setCode('');
+                }
+            } else {
+                const error = await response.json();
+                alert(`Error: ${error.error}`);
+            }
+        } catch (error) {
+            console.error('Error deleting file/folder:', error);
+            alert('Error deleting file/folder');
+        }
+    };
+
+
+
+    useEffect(() => {
         getFileTree();
     }, []);
 
-    useEffect(()=>
-    {
-        socket.on('file:refresh',getFileTree);
-        return ()=>{
-            socket.off('file:refresh',getFileTree)
+    useEffect(() => {
+        if (socket) {
+            socket.on('file:refresh', getFileTree);
+            return () => {
+                socket.off('file:refresh', getFileTree);
+            };
         }
-    },[])
- 
+    }, [socket]);
 
-    useEffect(()=>{
-        if(code && !isSaved && selectedFile && !selectedFile.endsWith('/')){
-            const timer= setTimeout(()=>{
-                socket.emit("file:change",{
-                    path:selectedFile,
+    // Close context menu on outside click
+    useEffect(() => {
+        const handleClickOutside = () => {
+            setContextMenu({ show: false, x: 0, y: 0, type: 'editor' });
+        };
+
+        if (contextMenu.show) {
+            document.addEventListener('click', handleClickOutside);
+            return () => document.removeEventListener('click', handleClickOutside);
+        }
+    }, [contextMenu.show]);
+
+
+    useEffect(() => {
+        if (socket && code && !isSaved && selectedFile && !selectedFile.endsWith('/')) {
+            const timer = setTimeout(() => {
+                socket.emit("file:change", {
+                    path: selectedFile,
                     content: code,
-                })
-
-                console.log('Save code',code)
-            },5*1000)
-            return()=>{
-                clearTimeout(timer)
-            }
+                });
+            }, 5 * 1000);
+            return () => {
+                clearTimeout(timer);
+            };
         }
-    },[code,selectedFile,isSaved]);
+    }, [socket, code, selectedFile, isSaved]);
 
 
-    useEffect(()=>{
-        setCode('')
-    },[selectedFile]);
+    useEffect(() => {
+        // Clear code and content when switching files
+        setCode('');
+        setSelectedFileContent('');
+    }, [selectedFile]);
 
-    useEffect(()=>{
-        if(selectedFile && selectedFileContent){
+    useEffect(() => {
+        if (selectedFile && selectedFileContent !== null) {
             setCode(selectedFileContent);
         }
-    },[selectedFile,selectedFileContent])
+    }, [selectedFile, selectedFileContent]);
 
 
-    const getFileContent = useCallback(async ()=>{
-        if(!selectedFile || selectedFile.endsWith('/')) return; 
-        const response= await fetch(`http://localhost:8000/files/content?path=${selectedFile}`);
-        const result = await response.json();
-        setSelectedFileContent(result.content)
-    },[selectedFile])  
+    const getFileContent = useCallback(async () => {
+        if (!selectedFile || selectedFile.endsWith('/') || !token) {
+            setSelectedFileContent('');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_ENDPOINTS.FILES_CONTENT}?path=${selectedFile}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (response.status === 401) {
+                logout();
+                return;
+            }
+
+            if (response.status === 404) {
+                // File doesn't exist or is empty, set empty content
+                setSelectedFileContent('');
+                return;
+            }
+
+            const result = await response.json();
+            setSelectedFileContent(result.content || '');
+        } catch (error) {
+            console.error('Error fetching file content:', error);
+            // On error, assume it's a new file
+            setSelectedFileContent('');
+        }
+    }, [selectedFile, token, logout]);
 
 
-    useEffect(()=>{
-        if(selectedFile)
-            getFileContent()
-    })
+    useEffect(() => {
+        if (selectedFile && !selectedFile.endsWith('/')) {
+            getFileContent();
+        }
+    }, [selectedFile, getFileContent]);
 
 
- return (
+
+    return (
         <div className="playground-container">
-            <div className="editor-container" >
-            <div className="files">
-                <FileTree onselect={(path)=> setSelectedFile(path)} tree={fileTree} />
-                <h1>hello</h1>
-            </div>
-            <div className="editor">
-            {selectedFile && <p>{selectedFile.replaceAll('/', ' -> ')}{isSaved? ' Saved':' Unsaved'}</p>}
-                <AceEditor
-                value={code}
-                onChange={(e)=>setCode(e)}
-                name="editor"
-                theme="github"
-                enableSnippets={{
-                    enableBasicAutocompletion:true,
-                    enableLiveAutoccompletion:true,
-                    enableSnippets:true,
-                }}
-                />
+            <div className="user-header">
+                <div className="user-info">
+                    <img src={user.picture} alt={user.name} className="user-avatar" />
+                    <span className="user-name">{user.name}</span>
+                </div>
+                <button onClick={logout} className="logout-btn">Logout</button>
             </div>
 
+            <div className="editor-container">
+                <div className="sidebar">
+                    <div className="sidebar-header">
+                        <div className="sidebar-title">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                            </svg>
+                            <span>Explorer</span>
+                        </div>
+                        <div className="sidebar-actions">
+                            <button
+                                className="action-btn"
+                                onClick={() => { setShowCreateModal(true); setCreateType('file') }}
+                                title="New File"
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                    <polyline points="14,2 14,8 20,8" />
+                                    <line x1="12" y1="18" x2="12" y2="12" />
+                                    <line x1="9" y1="15" x2="15" y2="15" />
+                                </svg>
+                            </button>
+                            <button
+                                className="action-btn"
+                                onClick={() => { setShowCreateModal(true); setCreateType('folder') }}
+                                title="New Folder"
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                                    <line x1="12" y1="15" x2="12" y2="9" />
+                                    <line x1="9" y1="12" x2="15" y2="12" />
+                                </svg>
+                            </button>
+                            <button
+                                className="action-btn delete-btn"
+                                onClick={() => selectedFile && deleteFileOrFolder(selectedFile)}
+                                disabled={!selectedFile || selectedFile === '/'}
+                                title={selectedFile ? `Delete ${selectedFile}` : "Select a file or folder to delete"}
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <polyline points="3,6 5,6 21,6" />
+                                    <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2" />
+                                    <line x1="10" y1="11" x2="10" y2="17" />
+                                    <line x1="14" y1="11" x2="14" y2="17" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <FileTree
+                        onselect={(path) => {
+                            setSelectedFile(path);
+                            // Track current directory for new file/folder creation
+                            if (path.endsWith('/')) {
+                                setCurrentPath(path.slice(0, -1)); // Remove trailing slash
+                            } else {
+                                // If it's a file, get its directory
+                                const pathParts = path.split('/');
+                                pathParts.pop(); // Remove filename
+                                setCurrentPath(pathParts.join('/'));
+                            }
+                        }}
+                        tree={fileTree}
+                    />
+
+                    {/* Create File/Folder Modal */}
+                    {showCreateModal && (
+                        <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
+                            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                                <h3>Create {createType}</h3>
+                                <p>Location: {currentPath || '/'}</p>
+                                <input
+                                    type="text"
+                                    value={createName}
+                                    onChange={(e) => setCreateName(e.target.value)}
+                                    placeholder={`Enter ${createType} name`}
+                                    onKeyPress={(e) => e.key === 'Enter' && createFileOrFolder()}
+                                    autoFocus
+                                />
+                                <div className="modal-actions">
+                                    <button
+                                        className="modal-btn cancel"
+                                        onClick={() => { setShowCreateModal(false); setCreateName('') }}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        className="modal-btn primary"
+                                        onClick={createFileOrFolder}
+                                    >
+                                        Create
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Context Menu */}
+                    {contextMenu.show && (
+                        <div
+                            className="context-menu"
+                            style={{
+                                position: 'fixed',
+                                top: contextMenu.y,
+                                left: contextMenu.x,
+                                zIndex: 1000
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="context-menu-item" onClick={() => {
+                                setShowCreateModal(true);
+                                setCreateType('file');
+                                setContextMenu({ show: false, x: 0, y: 0, type: 'editor' });
+                            }}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                    <polyline points="14,2 14,8 20,8" />
+                                    <line x1="12" y1="18" x2="12" y2="12" />
+                                    <line x1="9" y1="15" x2="15" y2="15" />
+                                </svg>
+                                New File
+                            </div>
+                            <div className="context-menu-item" onClick={() => {
+                                setShowCreateModal(true);
+                                setCreateType('folder');
+                                setContextMenu({ show: false, x: 0, y: 0, type: 'editor' });
+                            }}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                                    <line x1="12" y1="15" x2="12" y2="9" />
+                                    <line x1="9" y1="12" x2="15" y2="12" />
+                                </svg>
+                                New Folder
+                            </div>
+                            {selectedFile && selectedFile !== '/' && (
+                                <>
+                                    <div className="context-menu-divider"></div>
+                                    <div className="context-menu-item danger" onClick={() => {
+                                        deleteFileOrFolder(selectedFile);
+                                        setContextMenu({ show: false, x: 0, y: 0, type: 'editor' });
+                                    }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <polyline points="3,6 5,6 21,6" />
+                                            <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2" />
+                                            <line x1="10" y1="11" x2="10" y2="17" />
+                                            <line x1="14" y1="11" x2="14" y2="17" />
+                                        </svg>
+                                        Delete {selectedFile.split('/').pop()}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                <div className="main-content">
+                    <div className="editor-section">
+                        <div className="editor-header">
+                            <div className="tab-bar">
+                                {selectedFile && (
+                                    <div className="tab active">
+                                        <div className="tab-icon">
+                                            <span style={{ fontSize: '16px' }}>
+                                                {getFileIcon(selectedFile.split('/').pop())}
+                                            </span>
+                                        </div>
+                                        <span className="tab-name">
+                                            {selectedFile.split('/').pop() || 'untitled'}
+                                        </span>
+                                        <div className={`save-indicator ${isSaved ? 'saved' : 'unsaved'}`}>
+                                        </div>
+                                    </div>
+                                )}
+                                {!selectedFile && (
+                                    <div className="no-file-selected">
+                                        <span>Select a file to start editing</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div
+                            className="editor-content"
+                            onContextMenu={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setContextMenu({
+                                    show: true,
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                    type: 'editor'
+                                });
+                            }}
+                        >
+                            <AceEditor
+                                value={code}
+                                onChange={(e) => setCode(e)}
+                                name="editor"
+                                theme="one_dark"
+                                mode="javascript"
+                                width="100%"
+                                height="100%"
+                                fontSize={14}
+                                showPrintMargin={false}
+                                showGutter={true}
+                                highlightActiveLine={true}
+                                setOptions={{
+                                    enableBasicAutocompletion: true,
+                                    enableLiveAutocompletion: true,
+                                    enableSnippets: true,
+                                    showLineNumbers: true,
+                                    tabSize: 2,
+                                    useWorker: false
+                                }}
+                            />
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div className="terminal-container">
-                <Terminal />
+
+            <div className={`terminal-container ${terminalMinimized ? 'minimized' : ''}`}>
+                <div className="terminal-header">
+                    <div className="terminal-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="4,17 10,11 4,5" />
+                            <line x1="12" y1="19" x2="20" y2="19" />
+                        </svg>
+                        <span>Terminal</span>
+                    </div>
+                    <div className="terminal-actions">
+                        {!terminalMinimized && (
+                            <button
+                                className="terminal-action-btn"
+                                onClick={() => {
+                                    const terminal = document.querySelector('#terminal .xterm-screen');
+                                    if (terminal) {
+                                        terminal.scrollTop = terminal.scrollHeight;
+                                    }
+                                }}
+                                title="Scroll to Bottom (Ctrl+End)"
+                            >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <polyline points="7,13 12,18 17,13" />
+                                    <polyline points="7,6 12,11 17,6" />
+                                </svg>
+                            </button>
+                        )}
+                        <button
+                            className="terminal-toggle"
+                            onClick={() => setTerminalMinimized(!terminalMinimized)}
+                            title={terminalMinimized ? "Maximize Terminal" : "Minimize Terminal"}
+                        >
+                            {terminalMinimized ? (
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <polyline points="15,3 21,3 21,9" />
+                                    <polyline points="9,21 3,21 3,15" />
+                                    <line x1="21" y1="3" x2="14" y2="10" />
+                                    <line x1="3" y1="21" x2="10" y2="14" />
+                                </svg>
+                            ) : (
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <polyline points="4,14 10,14 10,20" />
+                                    <polyline points="20,10 14,10 14,4" />
+                                    <line x1="14" y1="10" x2="21" y2="3" />
+                                    <line x1="3" y1="21" x2="10" y2="14" />
+                                </svg>
+                            )}
+                        </button>
+                    </div>
+                </div>
+                {!terminalMinimized && <Terminal socket={socket} />}
             </div>
         </div>
     );
+};
+
+function App() {
+    return (
+        <AuthProvider>
+            <AppContent />
+        </AuthProvider>
+    );
 }
+
+const AppContent = () => {
+    const { user, loading, login } = useAuth();
+
+    if (loading) {
+        return (
+            <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                height: '100vh',
+                fontSize: '1.2rem'
+            }}>
+                Loading...
+            </div>
+        );
+    }
+
+    if (!user) {
+        return <Auth onLogin={login} />;
+    }
+
+    return <MainApp />;
+};
 
 export default App
