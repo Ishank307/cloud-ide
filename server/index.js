@@ -342,8 +342,10 @@ app.use(express.static(path.join(__dirname, '..', 'client/build')));
 //   res.sendFile(path.join(__dirname, '..', 'client/build', 'index.html'));
 // });
 
-server.listen('8000', '0.0.0.0', () => {
-    console.log(`Docker is running on port 8000`)
+const PORT = process.env.PORT || 8000;
+
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server is running on port ${PORT}`)
 })
 
 async function generatefile(directory) {

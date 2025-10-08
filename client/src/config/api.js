@@ -1,5 +1,5 @@
-const API_BASE_URL = import.meta.env.PROD 
-  ? 'https://your-backend-url.railway.app'  // Update this with your actual backend URL
+const API_BASE_URL = import.meta.env.PROD
+  ? 'https://your-backend.onrender.com'  // Update this with your actual Render URL after deployment
   : 'http://localhost:8000';
 
 export const API_ENDPOINTS = {
