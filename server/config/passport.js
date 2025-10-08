@@ -4,7 +4,9 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    callbackURL: "/auth/google/callback",
+    callbackURL: process.env.NODE_ENV === 'production' 
+        ? "https://cloud-ide-production.up.railway.app/auth/google/callback"
+        : "/auth/google/callback",
     scope: ['profile', 'email']
 }, async (accessToken, refreshToken, profile, done) => {
     try {
@@ -16,7 +18,7 @@ passport.use(new GoogleStrategy({
             name: profile.displayName,
             picture: profile.photos[0].value
         };
-        
+
         return done(null, user);
     } catch (error) {
         return done(error, null);
