@@ -9,13 +9,20 @@ const cors = require('cors');
 const chokidar = require('chokidar');
 const path = require('path');
 const { execSync } = require('child_process');
+const mongoose = require('mongoose');
 
 const { authenticateToken, authenticateSocket } = require('./middleware/auth');
 const authRoutes = require('./routes/auth');
+const jwtAuthRoutes = require('./routes/jwtAuth');
 const containerManager = require('./services/containerManager');
 
 const app = express();
 const server = http.createServer(app);
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/cloud-ide')
+    .then(() => console.log('✅ Connected to MongoDB'))
+    .catch(err => console.error('❌ MongoDB connection error:', err));
 
 // Middleware
 app.use(cors({
@@ -33,7 +40,8 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // Routes
-app.use('/auth', authRoutes);
+app.use('/auth', authRoutes);        // Google OAuth routes
+app.use('/api/auth', jwtAuthRoutes);  // JWT authentication routes
 
 // Health check route
 app.get('/', (req, res) => {

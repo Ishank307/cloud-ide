@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JWT Test Frontend</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+        }
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            background: #e9ecef;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px 5px 0 0;
+        }
+        .tab.active {
+            background: #007bff;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 JWT Frontend Test</h1>
+        
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('register')">Register</button>
+            <button class="tab" onclick="showTab('login')">Login</button>
+            <button class="tab" onclick="showTab('profile')">Profile</button>
+        </div>
+
+        <!-- Register Tab -->
+        <div id="register-tab">
+            <h2>Register New User</h2>
+            <div class="form-group">
+                <label>Username:</label>
+                <input type="text" id="reg-username" placeholder="Enter username">
+            </div>
+            <div class="form-group">
+                <label>Email:</label>
+                <input type="email" id="reg-email" placeholder="Enter email">
+            </div>
+            <div class="form-group">
+                <label>Password:</label>
+                <input type="password" id="reg-password" placeholder="Enter password">
+            </div>
+            <button onclick="register()">🚀 Register</button>
+        </div>
+
+        <!-- Login Tab -->
+        <div id="login-tab" style="display: none;">
+            <h2>Login</h2>
+            <div class="form-group">
+                <label>Email:</label>
+                <input type="email" id="login-email" placeholder="Enter email">
+            </div>
+            <div class="form-group">
+                <label>Password:</label>
+                <input type="password" id="login-password" placeholder="Enter password">
+            </div>
+            <button onclick="login()">🔐 Login</button>
+        </div>
+
+        <!-- Profile Tab -->
+        <div id="profile-tab" style="display: none;">
+            <h2>Get Profile</h2>
+            <p>Token: <span id="current-token">None</span></p>
+            <button onclick="getProfile()">👤 Get Profile</button>
+            <button onclick="clearToken()">🗑️ Clear Token</button>
+        </div>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        let currentToken = localStorage.getItem('jwt_token') || '';
+
+        // Update token display
+        function updateTokenDisplay() {
+            document.getElementById('current-token').textContent = 
+                currentToken ? currentToken.substring(0, 20) + '...' : 'None';
+        }
+
+        // Show result
+        function showResult(message, isError = false) {
+            const result = document.getElementById('result');
+            result.textContent = message;
+            result.className = `result ${isError ? 'error' : 'success'}`;
+        }
+
+        // Tab switching
+        function showTab(tabName) {
+            // Hide all tabs
+            document.getElementById('register-tab').style.display = 'none';
+            document.getElementById('login-tab').style.display = 'none';
+            document.getElementById('profile-tab').style.display = 'none';
+            
+            // Show selected tab
+            document.getElementById(tabName + '-tab').style.display = 'block';
+            
+            // Update tab buttons
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        // Register function
+        async function register() {
+            const username = document.getElementById('reg-username').value;
+            const email = document.getElementById('reg-email').value;
+            const password = document.getElementById('reg-password').value;
+
+            if (!username || !email || !password) {
+                showResult('Please fill all fields', true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/api/auth/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, email, password }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    currentToken = data.token;
+                    localStorage.setItem('jwt_token', currentToken);
+                    updateTokenDisplay();
+                    showResult(`✅ Registration successful!\\nToken: ${currentToken.substring(0, 30)}...\\nUser: ${JSON.stringify(data.user, null, 2)}`);
+                } else {
+                    showResult(`❌ Registration failed: ${data.error}`, true);
+                }
+            } catch (error) {
+                showResult(`❌ Network error: ${error.message}`, true);
+            }
+        }
+
+        // Login function
+        async function login() {
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+
+            if (!email || !password) {
+                showResult('Please fill all fields', true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/api/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email, password }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    currentToken = data.token;
+                    localStorage.setItem('jwt_token', currentToken);
+                    updateTokenDisplay();
+                    showResult(`✅ Login successful!\\nToken: ${currentToken.substring(0, 30)}...\\nUser: ${JSON.stringify(data.user, null, 2)}`);
+                } else {
+                    showResult(`❌ Login failed: ${data.error}`, true);
+                }
+            } catch (error) {
+                showResult(`❌ Network error: ${error.message}`, true);
+            }
+        }
+
+        // Get profile function
+        async function getProfile() {
+            if (!currentToken) {
+                showResult('❌ No token available. Please login first.', true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/api/auth/me`, {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`,
+                    },
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showResult(`✅ Profile retrieved!\\nUser: ${JSON.stringify(data.user, null, 2)}`);
+                } else {
+                    showResult(`❌ Profile fetch failed: ${data.error}`, true);
+                }
+            } catch (error) {
+                showResult(`❌ Network error: ${error.message}`, true);
+            }
+        }
+
+        // Clear token
+        function clearToken() {
+            currentToken = '';
+            localStorage.removeItem('jwt_token');
+            updateTokenDisplay();
+            showResult('🗑️ Token cleared');
+        }
+
+        // Initialize
+        updateTokenDisplay();
+    </script>
+</body>
+</html>

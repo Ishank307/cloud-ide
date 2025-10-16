@@ -1,5 +1,6 @@
 import Terminal from "./components/terminal"
 import Auth from "./components/Auth";
+import SimpleJwtAuth from "./components/SimpleJwtAuth";
 import './App.css';
 import { useCallback, useEffect, useState } from "react";
 import FileTree from "./components/tree";
@@ -667,7 +668,7 @@ const AppContent = () => {
     }
 
     if (!user) {
-        return <Auth onLogin={login} />;
+        return <SimpleJwtAuth onLogin={login} />;
     }
 
     return <MainApp />;
