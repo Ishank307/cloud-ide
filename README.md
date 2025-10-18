@@ -4,7 +4,6 @@
 
 [![Tech Stack](https://img.shields.io/badge/Stack-MERN-blue)](#tech-stack)
 [![Cloud Ready](https://img.shields.io/badge/☁️_Cloud-Ready-orange)](#deployment)
-[![Interview Ready](https://img.shields.io/badge/💼_Interview-Ready-success)](#interview-talking-points)
 
 ## 🎯 **What Makes This Special?**
 
