@@ -19,11 +19,11 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (token) {
+        if (token && !user) {  // Only verify if we don't already have user data
             // Determine which endpoint to use based on token type
             const isJWT = token.startsWith('eyJ'); // JWT tokens start with 'eyJ'
             const endpoint = isJWT ? '/api/auth/me' : API_ENDPOINTS.AUTH_ME;
-            
+
             // Verify token and get user info
             fetch(`http://localhost:8000${endpoint}`, {
                 headers: {
@@ -54,17 +54,10 @@ export const AuthProvider = ({ children }) => {
         } else {
             setLoading(false);
         }
-    }, [token]);
+    }, [token, user]);
 
     const login = (newToken, userData = null) => {
-        setToken(newToken);
-        
-        // If user data is provided (JWT login), set it immediately
-        if (userData) {
-            setUser(userData);
-        }
-        
-        // Store token based on type
+        // Store token based on type first
         if (newToken.startsWith('eyJ')) {
             // JWT token
             localStorage.setItem('jwt_token', newToken);
@@ -74,6 +67,14 @@ export const AuthProvider = ({ children }) => {
             localStorage.setItem('token', newToken);
             localStorage.removeItem('jwt_token'); // Remove JWT token if exists
         }
+
+        // If user data is provided (JWT login), set it immediately and skip verification
+        if (userData) {
+            setUser(userData);
+            setLoading(false);
+        }
+
+        setToken(newToken);
     };
 
     const logout = () => {

@@ -34,11 +34,15 @@ const MainApp = () => {
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
         const authToken = urlParams.get('token');
+        const authError = urlParams.get('error');
 
-        if (authToken && window.location.pathname === '/auth/callback') {
+        if (authToken) {
             login(authToken);
             // Clean up URL
             window.history.replaceState({}, document.title, '/');
+        } else if (authError) {
+            console.error('OAuth error:', authError);
+            // Could show error message to user
         }
     }, [login]);
 
