@@ -261,21 +261,5 @@ This project showcases modern full-stack development practices. Feel free to exp
 
 ---
 
-## 📞 **Contact**
-
-**Built with ❤️ for technical interviews and real-world applications**
-
-- 🚀 **Local Setup**: Follow the Quick Start guide above
-- 💼 **LinkedIn**: [Your LinkedIn Profile]
-- 📧 **Email**: [Your Email]
-- 🐙 **GitHub**: [Your GitHub Profile]
-
----
-
-## 📄 **License**
-
-MIT License - Feel free to use this project for learning and interviews!
-
----
 
 **⭐ If this project impressed you, please give it a star! It helps showcase the work to potential employers and collaborators.**
