@@ -1,6 +1,14 @@
 # 🚀 CloudIDE - Full-Stack Cloud Development Environment
 
 > **A modern, real-time collaborative IDE built for the cloud era**
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/06aacb8a-e188-4529-9db6-8d8e6cd0dbf9" />
+
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/4c9c3a60-255a-43f1-aec3-17e7bd8a914d" />
+
+
+
+
+
 
 [![Tech Stack](https://img.shields.io/badge/Stack-MERN-blue)](#tech-stack)
 [![Cloud Ready](https://img.shields.io/badge/☁️_Cloud-Ready-orange)](#deployment)
@@ -40,7 +48,6 @@ React 18 + Vite + Socket.IO Client + Ace Editor + CSS3
 - **Vite** - Lightning-fast build tool and HMR
 - **Ace Editor** - Professional code editor with syntax highlighting
 - **Socket.IO Client** - Real-time WebSocket communication
-- **Custom CSS3** - Responsive design with smooth animations
 
 ### **Backend Excellence**
 ```
