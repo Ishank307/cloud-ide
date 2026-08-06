@@ -1,14 +1,15 @@
 import React from 'react'
 import { getFileIcon, getFolderIcon } from '../utils/fileIcons'
 
-const FileTreeNode = ({ fileName, nodes, onselect, path }) => {
+const FileTreeNode = ({ fileName, nodes, onselect, path, activePath }) => {
     const isDir = !!nodes;
     const icon = isDir ? getFolderIcon(fileName) : getFileIcon(fileName);
+    const isActive = activePath === path;
     
     return (
         <div style={{ marginLeft: '10px' }}>
             <div 
-                className={isDir ? "folder-node" : "file-node"}
+                className={`${isDir ? "folder-node" : "file-node"} ${isActive ? 'active-tree-node' : ''}`}
                 onClick={(e) => {
                     e.stopPropagation();
                     if (isDir) 
@@ -40,6 +41,7 @@ const FileTreeNode = ({ fileName, nodes, onselect, path }) => {
                                 path={path + '/' + child}
                                 fileName={child}
                                 nodes={nodes[child]}
+                                activePath={activePath}
                             />
                         </li>
                     ))}
@@ -49,9 +51,9 @@ const FileTreeNode = ({ fileName, nodes, onselect, path }) => {
     )
 }
 
-const FileTree = ({ tree, onselect }) => {
+const FileTree = ({ tree, onselect, activePath }) => {
     if (!tree || typeof tree !== 'object' || Object.keys(tree).length === 0) {
-        return <div>No files to display</div>;
+        return <div style={{color: '#94a3b8', padding: '1rem'}}>No files to display</div>;
     }
     
     return (
@@ -60,6 +62,7 @@ const FileTree = ({ tree, onselect }) => {
             fileName="/" 
             path=""
             nodes={tree}
+            activePath={activePath}
         />
     )
 }

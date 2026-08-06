@@ -10,12 +10,19 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
+    "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^5.5.0",
+    "lucide-react": "^1.28.0",
+    "monaco-editor": "^0.56.0",
     "nodemon": "^3.1.10",
     "react": "^19.1.1",
-    "react-ace": "^14.0.1",
     "react-dom": "^19.1.1",
-    "socket.io-client": "^4.8.1"
+    "react-resizable-panels": "^4.12.2",
+    "socket.io-client": "^4.8.1",
+    "y-monaco": "^0.1.6",
+    "y-websocket": "^3.0.0",
+    "yjs": "^13.6.31"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",

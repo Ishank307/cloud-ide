@@ -10,6 +10,7 @@ export const API_ENDPOINTS = {
   FILES: `${API_BASE_URL}/files`,
   FILES_CONTENT: `${API_BASE_URL}/files/content`,
   FILES_CREATE: `${API_BASE_URL}/files/create`,
+  FILES_SAVE: `${API_BASE_URL}/files/save`,
   FILES_DELETE: `${API_BASE_URL}/files/delete`,
 };
 
