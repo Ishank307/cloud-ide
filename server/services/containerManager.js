@@ -3,11 +3,20 @@ const docker = new Docker();
 
 class ContainerManager {
     constructor() {
-        this.userContainers = new Map(); // userId -> containerInfo
-        this.userTimers = new Map(); // userId -> timeout
+        this.workspaceContainers = new Map(); // workspaceId -> containerInfo
+        this.workspaceTimers = new Map(); // workspaceId -> timeout
     }
 
-    async createUserContainer(userId) {
+    async createWorkspaceContainer(workspaceId) {
+        // In development, skip Docker entirely — just use local shell
+        if (process.env.NODE_ENV !== 'production') {
+            if (!this.workspaceContainers.has(workspaceId)) {
+                const containerInfo = { id: 'dev-mode', workspaceId, createdAt: new Date(), lastActivity: new Date() };
+                this.workspaceContainers.set(workspaceId, containerInfo);
+            }
+            return this.workspaceContainers.get(workspaceId);
+        }
+
         try {
             // Check if Docker is available
             try {
@@ -15,42 +24,41 @@ class ContainerManager {
                 console.log('Docker is available, creating container...');
             } catch (dockerError) {
                 console.log('Docker not available, using local environment');
-                return { id: 'local-mode', userId, createdAt: new Date(), lastActivity: new Date() };
+                return { id: 'local-mode', workspaceId, createdAt: new Date(), lastActivity: new Date() };
             }
 
-            // Enable container creation in development for testing
-            // if (process.env.NODE_ENV !== 'production') {
-            //     console.log(`Skipping container creation for user ${userId} in development mode`);
-            //     return { id: 'dev-mode', userId, createdAt: new Date(), lastActivity: new Date() };
-            // }
-
             // Check if container already exists
-            if (this.userContainers.has(userId)) {
-                const containerInfo = this.userContainers.get(userId);
+            if (this.workspaceContainers.has(workspaceId)) {
+                const containerInfo = this.workspaceContainers.get(workspaceId);
                 const container = docker.getContainer(containerInfo.id);
                 
                 // Check if container is running
                 const inspect = await container.inspect();
                 if (inspect.State.Running) {
-                    console.log(`Container for user ${userId} already running`);
+                    console.log(`Container for workspace ${workspaceId} already running`);
                     return containerInfo;
                 }
             }
 
-            // Create new container for user
+            // Create new container for workspace
             const container = await docker.createContainer({
                 Image: 'node:18-alpine',
-                Cmd: ['sh', '-c', 'apk add --no-cache bash && tail -f /dev/null'],
-                WorkingDir: `/workspace/${userId}`,
+                Cmd: ['sh', '-c', 'apk add --no-cache bash && addgroup -g 1000 workspace && adduser -u 1000 -G workspace -h /workspace -D workspace && chown -R workspace:workspace /workspace && su workspace -c "cd /workspace && tail -f /dev/null"'],
+                WorkingDir: `/workspace`,
                 Tty: true,
                 OpenStdin: true,
                 AttachStdin: true,
                 AttachStdout: true,
                 AttachStderr: true,
-                Env: [`USER_ID=${userId}`],
+                Env: [`WORKSPACE_ID=${workspaceId}`],
                 HostConfig: {
                     Memory: 512 * 1024 * 1024, // 512MB limit
-                    CpuShares: 512, // CPU limit
+                    CpuShares: 512,
+                    PidsLimit: 100,
+                    NetworkMode: 'none',
+                    Binds: [
+                        `${require('path').resolve('./workspaces/' + workspaceId)}:/workspace`
+                    ]
                 }
             });
 
@@ -58,78 +66,73 @@ class ContainerManager {
             
             const containerInfo = {
                 id: container.id,
-                userId: userId,
+                workspaceId: workspaceId,
                 createdAt: new Date(),
                 lastActivity: new Date()
             };
 
-            this.userContainers.set(userId, containerInfo);
-            console.log(`Created container ${container.id} for user ${userId}`);
+            this.workspaceContainers.set(workspaceId, containerInfo);
+            console.log(`Created container ${container.id} for workspace ${workspaceId}`);
             
             return containerInfo;
         } catch (error) {
             console.error('Error creating container:', error);
-            // In development, don't throw error, just log it
-            if (process.env.NODE_ENV !== 'production') {
-                console.log('Container creation failed, continuing in development mode');
-                return { id: 'dev-mode', userId, createdAt: new Date(), lastActivity: new Date() };
-            }
             throw error;
         }
     }
 
-    async stopUserContainer(userId) {
+    async stopWorkspaceContainer(workspaceId) {
         try {
-            const containerInfo = this.userContainers.get(userId);
+            const containerInfo = this.workspaceContainers.get(workspaceId);
             if (!containerInfo) return;
 
             const container = docker.getContainer(containerInfo.id);
             await container.stop();
             await container.remove();
             
-            this.userContainers.delete(userId);
-            this.clearUserTimer(userId);
+            this.workspaceContainers.delete(workspaceId);
+            this.clearWorkspaceTimer(workspaceId);
             
-            console.log(`Stopped and removed container for user ${userId}`);
+            console.log(`Stopped and removed container for workspace ${workspaceId}`);
         } catch (error) {
             console.error('Error stopping container:', error);
         }
     }
 
-    updateUserActivity(userId) {
-        const containerInfo = this.userContainers.get(userId);
+    updateWorkspaceActivity(workspaceId) {
+        const containerInfo = this.workspaceContainers.get(workspaceId);
         if (containerInfo) {
             containerInfo.lastActivity = new Date();
         }
 
         // Clear existing timer
-        this.clearUserTimer(userId);
+        this.clearWorkspaceTimer(workspaceId);
 
-        // Set new timer for 10 minutes
+        // Set new timer for 30 minutes
         const timer = setTimeout(() => {
-            console.log(`User ${userId} inactive for 10 minutes, stopping container`);
-            this.stopUserContainer(userId);
-        }, 10 * 60 * 1000); // 10 minutes
+            console.log(`Workspace ${workspaceId} inactive for 30 minutes, stopping container`);
+            this.stopWorkspaceContainer(workspaceId);
+        }, 30 * 60 * 1000); // 30 minutes
 
-        this.userTimers.set(userId, timer);
+        this.workspaceTimers.set(workspaceId, timer);
     }
 
-    clearUserTimer(userId) {
-        const timer = this.userTimers.get(userId);
+    clearWorkspaceTimer(workspaceId) {
+        const timer = this.workspaceTimers.get(workspaceId);
         if (timer) {
             clearTimeout(timer);
-            this.userTimers.delete(userId);
+            this.workspaceTimers.delete(workspaceId);
         }
     }
 
-    getUserContainer(userId) {
-        return this.userContainers.get(userId);
+    getWorkspaceContainer(workspaceId) {
+        return this.workspaceContainers.get(workspaceId);
     }
 
-    async executeCommand(userId, command) {
-        const containerInfo = this.userContainers.get(userId);
+    async executeCommand(workspaceId, command) {
+        const containerInfo = this.workspaceContainers.get(workspaceId);
         if (!containerInfo) {
-            throw new Error('No container found for user');
+            throw new Error('No container found for workspace');
         }
 
         const container = docker.getContainer(containerInfo.id);
@@ -140,7 +143,7 @@ class ContainerManager {
         });
 
         const stream = await exec.start();
-        this.updateUserActivity(userId);
+        this.updateWorkspaceActivity(workspaceId);
         
         return stream;
     }

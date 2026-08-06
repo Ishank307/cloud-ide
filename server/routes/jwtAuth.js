@@ -115,6 +115,12 @@ router.get('/me', async (req, res) => {
         // Verify JWT token
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         
+        // Validate ObjectId format to prevent CastErrors from legacy tokens
+        const mongoose = require('mongoose');
+        if (!mongoose.Types.ObjectId.isValid(decoded.id)) {
+            return res.status(401).json({ error: 'Invalid user token format' });
+        }
+
         // Get user from database (exclude password)
         const user = await User.findById(decoded.id).select('-password');
         if (!user) {
@@ -125,7 +131,8 @@ router.get('/me', async (req, res) => {
             user: {
                 id: user._id,
                 username: user.username,
-                email: user.email
+                email: user.email,
+                picture: user.picture
             }
         });
 

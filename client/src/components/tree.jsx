@@ -1,13 +1,21 @@
 import React from 'react'
 import { getFileIcon, getFolderIcon } from '../utils/fileIcons'
 
-const FileTreeNode = ({ fileName, nodes, onselect, path, activePath }) => {
+const FileTreeNode = ({ fileName, nodes, onselect, path, activePath, onContextMenu }) => {
     const isDir = !!nodes;
     const icon = isDir ? getFolderIcon(fileName) : getFileIcon(fileName);
     const isActive = activePath === path;
     
+    const handleContextMenu = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (onContextMenu) {
+            onContextMenu(e, path, isDir, fileName);
+        }
+    };
+
     return (
-        <div style={{ marginLeft: '10px' }}>
+        <div style={{ marginLeft: path === '' ? 0 : '10px' }}>
             <div 
                 className={`${isDir ? "folder-node" : "file-node"} ${isActive ? 'active-tree-node' : ''}`}
                 onClick={(e) => {
@@ -17,6 +25,7 @@ const FileTreeNode = ({ fileName, nodes, onselect, path, activePath }) => {
                     else 
                         onselect(path);
                 }}
+                onContextMenu={handleContextMenu}
                 style={{ 
                     margin: 0,
                     cursor: 'pointer',
@@ -42,6 +51,7 @@ const FileTreeNode = ({ fileName, nodes, onselect, path, activePath }) => {
                                 fileName={child}
                                 nodes={nodes[child]}
                                 activePath={activePath}
+                                onContextMenu={onContextMenu}
                             />
                         </li>
                     ))}
@@ -51,19 +61,39 @@ const FileTreeNode = ({ fileName, nodes, onselect, path, activePath }) => {
     )
 }
 
-const FileTree = ({ tree, onselect, activePath }) => {
+const FileTree = ({ tree, onselect, activePath, onContextMenu }) => {
+    const handleEmptyContextMenu = (e) => {
+        e.preventDefault();
+        if (onContextMenu) {
+            onContextMenu(e, '', true, 'root');
+        }
+    };
+
     if (!tree || typeof tree !== 'object' || Object.keys(tree).length === 0) {
-        return <div style={{color: '#94a3b8', padding: '1rem'}}>No files to display</div>;
+        return (
+            <div 
+                style={{ color: '#94a3b8', padding: '1rem', minHeight: '100%' }}
+                onContextMenu={handleEmptyContextMenu}
+            >
+                No files to display
+            </div>
+        );
     }
     
     return (
-        <FileTreeNode
-            onselect={onselect}
-            fileName="/" 
-            path=""
-            nodes={tree}
-            activePath={activePath}
-        />
+        <div 
+            style={{ height: '100%', minHeight: '100%' }}
+            onContextMenu={handleEmptyContextMenu}
+        >
+            <FileTreeNode
+                onselect={onselect}
+                fileName="/" 
+                path=""
+                nodes={tree}
+                activePath={activePath}
+                onContextMenu={onContextMenu}
+            />
+        </div>
     )
 }
 

@@ -3,7 +3,7 @@ import Editor from '@monaco-editor/react';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { MonacoBinding } from 'y-monaco';
-import { File, X, Play, Users, TerminalSquare, ChevronDown, ChevronUp, FilePlus, FolderPlus, RefreshCw } from 'lucide-react';
+import { File, X, Play, Users, TerminalSquare, ChevronDown, ChevronUp, FilePlus, FolderPlus, RefreshCw, Trash2 } from 'lucide-react';
 import Terminal from './terminal';
 import FileTree from './tree';
 import socketManager from '../socket';
@@ -63,6 +63,15 @@ function getLanguage(filename) {
     return map[ext] || 'plaintext';
 }
 
+// ─── Helper to compute parent directory ──────────────────────────────────────
+function getParentDirectory(path, isDir) {
+    if (!path || path === '/') return '';
+    if (isDir) return path;
+    const lastSlashIndex = path.lastIndexOf('/');
+    if (lastSlashIndex <= 0) return '';
+    return path.substring(0, lastSlashIndex);
+}
+
 // ─── IDE Workspace ─────────────────────────────────────────────────────────
 
 const IdeWorkspace = ({ workspaceId, user, token, logout, onLeaveWorkspace }) => {
@@ -76,12 +85,31 @@ const IdeWorkspace = ({ workspaceId, user, token, logout, onLeaveWorkspace }) =>
     const [saving, setSaving] = useState(false);
     const [newItemState, setNewItemState] = useState(null); // { type: 'file'|'folder', parentPath }
     const [newItemName, setNewItemName] = useState('');
+    const [contextMenu, setContextMenu] = useState(null); // { x, y, path, isDir, fileName }
 
     const [sidebarWidth, onSidebarDrag] = useResizer(240, 140, 500, 'horizontal');
     const [terminalHeight, onTerminalDrag] = useResizer(220, 80, 520, 'vertical');
 
     const editorRef = useRef(null);
     const saveTimerRef = useRef(null);
+
+    // ── Context Menu dismiss listener ─────────────────────────────────────────
+    useEffect(() => {
+        const handleClose = () => setContextMenu(null);
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape') setContextMenu(null);
+        };
+        if (contextMenu) {
+            window.addEventListener('click', handleClose);
+            window.addEventListener('contextmenu', handleClose);
+            window.addEventListener('keydown', handleKeyDown);
+        }
+        return () => {
+            window.removeEventListener('click', handleClose);
+            window.removeEventListener('contextmenu', handleClose);
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [contextMenu]);
 
     // ── Socket ──────────────────────────────────────────────────────────────
     useEffect(() => {
@@ -201,11 +229,8 @@ const IdeWorkspace = ({ workspaceId, user, token, logout, onLeaveWorkspace }) =>
     // ── Run Code ──────────────────────────────────────────────────────────────
     const runCode = () => {
         if (!activeTab || !socket) return;
-        // activeTab is like "/subdir/test.js" — get just the filename
         const filename = activeTab.split('/').pop();
         const ext = filename.split('.').pop()?.toLowerCase();
-        // Build run command — the terminal CWD is already the workspace root
-        // If the file is in a subdirectory, we need the relative path from workspace root
         const relPath = activeTab.startsWith('/') ? activeTab.slice(1) : activeTab;
         let command;
         if (ext === 'js') command = `node "${relPath}"`;
@@ -217,14 +242,30 @@ const IdeWorkspace = ({ workspaceId, user, token, logout, onLeaveWorkspace }) =>
     };
 
     // ── Create New File/Folder ────────────────────────────────────────────────
-    const handleCreateItem = async (type) => {
-        setNewItemState({ type });
+    const handleCreateItem = (type, targetPath = '', isDir = true) => {
+        const parentPath = getParentDirectory(targetPath, isDir);
+        setNewItemState({ type, parentPath });
         setNewItemName('');
     };
 
     const confirmCreate = async () => {
-        if (!newItemName.trim()) return;
-        const filePath = '/' + newItemName.trim();
+        if (!newItemName.trim() || !newItemState) return;
+
+        let parent = newItemState.parentPath || '';
+        if (parent && !parent.startsWith('/')) {
+            parent = '/' + parent;
+        }
+        if (parent.endsWith('/')) {
+            parent = parent.slice(0, -1);
+        }
+
+        let name = newItemName.trim();
+        if (name.startsWith('/')) {
+            name = name.slice(1);
+        }
+
+        const filePath = parent + '/' + name;
+
         try {
             await fetch(API_ENDPOINTS.FILES_CREATE, {
                 method: 'POST',
@@ -240,6 +281,61 @@ const IdeWorkspace = ({ workspaceId, user, token, logout, onLeaveWorkspace }) =>
         } catch (err) {
             console.error('Error creating item:', err);
         }
+    };
+
+    // ── Delete File/Folder ────────────────────────────────────────────────────
+    const handleDeleteItem = async (path, isDir, fileName) => {
+        if (!path || path === '/') return;
+        const itemType = isDir ? 'folder' : 'file';
+        const displayName = fileName || path.split('/').pop() || path;
+
+        if (!window.confirm(`Are you sure you want to delete the ${itemType} "${displayName}"?`)) {
+            return;
+        }
+
+        try {
+            const res = await fetch(API_ENDPOINTS.FILES_DELETE, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ workspaceId, path })
+            });
+
+            if (res.ok) {
+                setOpenTabs(prev => prev.filter(t => t.path !== path && !t.path.startsWith(path + '/')));
+                setFileContents(prev => {
+                    const next = { ...prev };
+                    Object.keys(next).forEach(p => {
+                        if (p === path || p.startsWith(path + '/')) {
+                            delete next[p];
+                        }
+                    });
+                    return next;
+                });
+                if (activeTab === path || (activeTab && activeTab.startsWith(path + '/'))) {
+                    setActiveTab(null);
+                }
+                await getFileTree();
+            } else {
+                const data = await res.json();
+                alert(`Error deleting item: ${data.error || 'Unknown error'}`);
+            }
+        } catch (err) {
+            console.error('Error deleting item:', err);
+        }
+    };
+
+    // ── Tree Context Menu Handler ─────────────────────────────────────────────
+    const handleTreeContextMenu = (e, path, isDir, fileName) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const menuWidth = 160;
+        const menuHeight = 120;
+        const x = Math.min(e.clientX, window.innerWidth - menuWidth);
+        const y = Math.min(e.clientY, window.innerHeight - menuHeight);
+        setContextMenu({ x, y, path, isDir, fileName });
     };
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -273,8 +369,8 @@ const IdeWorkspace = ({ workspaceId, user, token, logout, onLeaveWorkspace }) =>
                     <div className="sidebar-title">
                         <span>EXPLORER</span>
                         <div className="sidebar-actions">
-                            <button title="New File" onClick={() => handleCreateItem('file')}><FilePlus size={14} /></button>
-                            <button title="New Folder" onClick={() => handleCreateItem('folder')}><FolderPlus size={14} /></button>
+                            <button title="New File in Root" onClick={() => handleCreateItem('file', '', true)}><FilePlus size={14} /></button>
+                            <button title="New Folder in Root" onClick={() => handleCreateItem('folder', '', true)}><FolderPlus size={14} /></button>
                             <button title="Refresh" onClick={getFileTree}><RefreshCw size={13} /></button>
                         </div>
                     </div>
@@ -282,6 +378,9 @@ const IdeWorkspace = ({ workspaceId, user, token, logout, onLeaveWorkspace }) =>
                     {/* New item input */}
                     {newItemState && (
                         <div className="new-item-input">
+                            <div className="new-item-target">
+                                {newItemState.parentPath ? `Target: ${newItemState.parentPath}` : 'Target: / (root)'}
+                            </div>
                             <input
                                 autoFocus
                                 type="text"
@@ -301,9 +400,56 @@ const IdeWorkspace = ({ workspaceId, user, token, logout, onLeaveWorkspace }) =>
                             tree={fileTree}
                             onselect={handleFileSelect}
                             activePath={activeTab}
+                            onContextMenu={handleTreeContextMenu}
                         />
                     </div>
                 </div>
+
+                {/* ── Context Menu Overlay ── */}
+                {contextMenu && (
+                    <div 
+                        className="context-menu"
+                        style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <button 
+                            className="context-menu-item"
+                            onClick={() => {
+                                handleCreateItem('file', contextMenu.path, contextMenu.isDir);
+                                setContextMenu(null);
+                            }}
+                        >
+                            <FilePlus size={14} />
+                            <span>New File</span>
+                        </button>
+                        <button 
+                            className="context-menu-item"
+                            onClick={() => {
+                                handleCreateItem('folder', contextMenu.path, contextMenu.isDir);
+                                setContextMenu(null);
+                            }}
+                        >
+                            <FolderPlus size={14} />
+                            <span>New Folder</span>
+                        </button>
+                        {contextMenu.path && contextMenu.path !== '/' && (
+                            <>
+                                <div className="context-menu-divider" />
+                                <button 
+                                    className="context-menu-item danger"
+                                    onClick={() => {
+                                        const { path, isDir, fileName } = contextMenu;
+                                        setContextMenu(null);
+                                        handleDeleteItem(path, isDir, fileName);
+                                    }}
+                                >
+                                    <Trash2 size={14} />
+                                    <span>Delete {contextMenu.isDir ? 'Folder' : 'File'}</span>
+                                </button>
+                            </>
+                        )}
+                    </div>
+                )}
 
                 {/* ── Sidebar Drag Handle ── */}
                 <div className="drag-handle drag-handle-v" onMouseDown={onSidebarDrag} />

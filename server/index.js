@@ -6,15 +6,18 @@ const { Server: SocketServer } = require('socket.io');
 const session = require('express-session');
 const passport = require('./config/passport');
 const cors = require('cors');
-const chokidar = require('chokidar');
 const path = require('path');
-const { execSync } = require('child_process');
 const mongoose = require('mongoose');
+const WebSocket = require('ws');
 
 const { authenticateToken, authenticateSocket } = require('./middleware/auth');
 const authRoutes = require('./routes/auth');
 const jwtAuthRoutes = require('./routes/jwtAuth');
 const containerManager = require('./services/containerManager');
+const Workspace = require('./models/Workspace');
+
+const setupTerminalHandlers = require('./socket/terminal');
+const setupFileHandlers = require('./socket/files');
 
 const app = express();
 const server = http.createServer(app);
@@ -31,7 +34,7 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(session({
-    secret: process.env.SESSION_SECRET,
+    secret: process.env.SESSION_SECRET || 'secret',
     resave: false,
     saveUninitialized: false,
     cookie: { secure: false } // Set to true in production with HTTPS
@@ -56,6 +59,111 @@ app.get('/', (req, res) => {
     });
 });
 
+// Create Workspace endpoint (Basic stub for now)
+app.post('/workspaces', authenticateToken, async (req, res) => {
+    try {
+        const workspace = new Workspace({
+            name: req.body.name || 'Untitled Workspace',
+            owner: req.user.id,
+            collaborators: []
+        });
+        await workspace.save();
+        
+        const workspaceDir = path.resolve(`./workspaces/${workspace._id}`);
+        await fs.mkdir(workspaceDir, { recursive: true });
+        
+        res.json(workspace);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get user's workspaces
+app.get('/workspaces', authenticateToken, async (req, res) => {
+    try {
+        const workspaces = await Workspace.find({ 
+            $or: [
+                { owner: req.user.id },
+                { 'collaborators.user': req.user.id }
+            ]
+        }).sort({ createdAt: -1 });
+        res.json(workspaces);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Search workspaces by name or ID
+app.get('/workspaces/search', authenticateToken, async (req, res) => {
+    try {
+        const query = req.query.q;
+        if (!query) {
+            return res.json([]);
+        }
+        
+        let dbQuery;
+        if (mongoose.Types.ObjectId.isValid(query)) {
+            dbQuery = { _id: query };
+        } else {
+            dbQuery = { name: { $regex: query, $options: 'i' } };
+        }
+        
+        const workspaces = await Workspace.find(dbQuery).limit(10).sort({ createdAt: -1 });
+        res.json(workspaces);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Rename workspace
+app.patch('/workspaces/:id', authenticateToken, async (req, res) => {
+    try {
+        const { name } = req.body;
+        if (!name) return res.status(400).json({ error: 'Name is required' });
+        
+        const workspace = await Workspace.findById(req.params.id);
+        if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+        
+        if (workspace.owner.toString() !== req.user.id) {
+            return res.status(403).json({ error: 'Only the owner can rename this workspace' });
+        }
+        
+        workspace.name = name;
+        await workspace.save();
+        
+        res.json(workspace);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Delete workspace
+app.delete('/workspaces/:id', authenticateToken, async (req, res) => {
+    try {
+        const workspace = await Workspace.findById(req.params.id);
+        if (!workspace) {
+            return res.status(404).json({ error: 'Workspace not found' });
+        }
+        if (workspace.owner.toString() !== req.user.id) {
+            return res.status(403).json({ error: 'Only the owner can delete this workspace' });
+        }
+        
+        await Workspace.findByIdAndDelete(req.params.id);
+        
+        const workspaceDir = path.resolve(`./workspaces/${req.params.id}`);
+        try {
+            await fs.rm(workspaceDir, { recursive: true, force: true });
+        } catch (e) {
+            console.error('Error deleting workspace directory:', e);
+        }
+        
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Socket.IO Setup
 const io = new SocketServer(server, {
     cors: {
         origin: process.env.CLIENT_URL || 'http://localhost:5173',
@@ -63,233 +171,86 @@ const io = new SocketServer(server, {
     }
 });
 
-// Socket.IO with authentication
 io.use(authenticateSocket);
 
-const userPtyProcesses = new Map(); // userId -> ptyProcess
+// Socket state Maps
 const userSockets = new Map(); // userId -> Set of socket IDs
-const userWatchers = new Map(); // userId -> watcher
+let workspacePtyProcessesRef = null;
+let workspaceWatchersRef = null;
 
-// Clean up inactive PTY processes every 5 minutes
-setInterval(() => {
-    for (const [userId, ptyProcess] of userPtyProcesses.entries()) {
-        if (!userSockets.has(userId) || userSockets.get(userId).size === 0) {
-            console.log(`Cleaning up inactive PTY for user ${userId}`);
-            if (ptyProcess && !ptyProcess.killed) {
-                ptyProcess.kill();
-            }
-            userPtyProcesses.delete(userId);
-        }
-    }
-}, 5 * 60 * 1000);
-
-io.on('connection', async (socket) => {
+io.on('connection', (socket) => {
     console.log('User connected:', socket.user.email);
     
-    // Track user sockets
     if (!userSockets.has(socket.user.id)) {
         userSockets.set(socket.user.id, new Set());
     }
     userSockets.get(socket.user.id).add(socket.id);
 
-    try {
-        // Create or get user container (skip in development)
-        if (process.env.NODE_ENV === 'production') {
-            await containerManager.createUserContainer(socket.user.id);
+    // Initialize handlers
+    const terminalHandlers = setupTerminalHandlers(io, socket);
+    const fileHandlers = setupFileHandlers(io, socket);
+    
+    workspacePtyProcessesRef = terminalHandlers.workspacePtyProcesses;
+    workspaceWatchersRef = fileHandlers.workspaceWatchers;
+
+    socket.on('disconnect', () => {
+        console.log('User disconnected:', socket.user.email);
+        const userSocketSet = userSockets.get(socket.user.id);
+        if (userSocketSet) {
+            userSocketSet.delete(socket.id);
+            if (userSocketSet.size === 0) {
+                userSockets.delete(socket.user.id);
+            }
         }
-        containerManager.updateUserActivity(socket.user.id);
-
-        // Create user directory if it doesn't exist
-        const userDir = path.resolve(`./users/${socket.user.id}`);
-        await fs.mkdir(userDir, { recursive: true });
-
-        // Get or create PTY process for this user
-        let ptyProcess = userPtyProcesses.get(socket.user.id);
-        
-        if (!ptyProcess || ptyProcess.killed) {
-            const pty = require('node-pty');
-
-            // Use bash if available, fallback to sh
-            let shell = 'bash';
-            try {
-                execSync('which bash', { stdio: 'ignore' });
-            } catch (e) {
-                shell = 'sh';
-                console.log('Bash not found, using sh');
-            }
-
-            console.log(`Creating new PTY process for user ${socket.user.email}`);
-
-            try {
-                ptyProcess = pty.spawn(shell, [], {
-                    name: 'xterm-color',
-                    cols: 80,
-                    rows: 30,
-                    cwd: userDir,
-                    env: {
-                        PATH: process.env.PATH,
-                        HOME: userDir,
-                        USER: `user_${socket.user.id}`,
-                        SHELL: shell,
-                        TERM: 'xterm-256color',
-                        PWD: userDir
-                    }
-                });
-
-                // Set up data handler - broadcast to all user's sockets
-                ptyProcess.onData((data) => {
-                    const userSocketSet = userSockets.get(socket.user.id);
-                    if (userSocketSet) {
-                        userSocketSet.forEach(socketId => {
-                            const userSocket = io.sockets.sockets.get(socketId);
-                            if (userSocket) {
-                                userSocket.emit('terminal:data', data);
-                            }
-                        });
-                    }
-                });
-
-                // Handle PTY errors and exit
-                ptyProcess.onExit((exitCode, signal) => {
-                    console.log(`PTY process exited for user ${socket.user.email}: code ${JSON.stringify(exitCode)}, signal ${signal}`);
-                    userPtyProcesses.delete(socket.user.id);
-                    
-                    // Notify all user's sockets
-                    const userSocketSet = userSockets.get(socket.user.id);
-                    if (userSocketSet) {
-                        userSocketSet.forEach(socketId => {
-                            const userSocket = io.sockets.sockets.get(socketId);
-                            if (userSocket) {
-                                userSocket.emit('terminal:data', '\r\nTerminal session ended. Reconnecting...\r\n');
-                            }
-                        });
-                    }
-                });
-
-                userPtyProcesses.set(socket.user.id, ptyProcess);
-                console.log(`Created PTY process for user ${socket.user.email}`);
-
-                // Send welcome message
-                setTimeout(() => {
-                    if (!ptyProcess.killed) {
-                        socket.emit('terminal:data', `Welcome to your workspace!\r\nDirectory: ${userDir}\r\n`);
-                    }
-                }, 500);
-
-            } catch (error) {
-                console.error('Error creating PTY process:', error);
-                socket.emit('terminal:data', `Error creating terminal: ${error.message}\r\n`);
-            }
-        } else {
-            // PTY exists, just send welcome message to this socket
-            socket.emit('terminal:data', 'Terminal reconnected!\r\n');
-        }
-
-        socket.on('terminal:write', (data) => {
-            const currentPty = userPtyProcesses.get(socket.user.id);
-            
-            if (currentPty && !currentPty.killed) {
-                try {
-                    currentPty.write(data);
-                    containerManager.updateUserActivity(socket.user.id);
-                } catch (error) {
-                    console.error('Error writing to PTY:', error);
-                    socket.emit('terminal:data', 'Terminal error occurred. Reconnecting...\r\n');
-                    // Remove the broken PTY so it gets recreated
-                    userPtyProcesses.delete(socket.user.id);
-                }
-            } else {
-                socket.emit('terminal:data', 'Terminal not ready. Please refresh.\r\n');
-            }
-        });
-
-        socket.on('file:change', async ({ path, content }) => {
-            await fs.writeFile(`${userDir}${path}`, content, 'utf-8');
-            containerManager.updateUserActivity(socket.user.id);
-        });
-
-        // Set up file watcher (one per user, not per socket)
-        if (!userWatchers.has(socket.user.id)) {
-            const watcher = chokidar.watch(userDir);
-            watcher.on('all', (_, filePath) => {
-                // Broadcast to all user's sockets
-                const userSocketSet = userSockets.get(socket.user.id);
-                if (userSocketSet) {
-                    userSocketSet.forEach(socketId => {
-                        const userSocket = io.sockets.sockets.get(socketId);
-                        if (userSocket) {
-                            userSocket.emit('file:refresh', filePath);
-                        }
-                    });
-                }
-            });
-            userWatchers.set(socket.user.id, watcher);
-        }
-
-        socket.on('disconnect', () => {
-            console.log('User disconnected:', socket.user.email);
-            
-            // Remove this socket from user's socket set
-            const userSocketSet = userSockets.get(socket.user.id);
-            if (userSocketSet) {
-                userSocketSet.delete(socket.id);
-                
-                // If no more sockets for this user, clean up watcher
-                if (userSocketSet.size === 0) {
-                    const watcher = userWatchers.get(socket.user.id);
-                    if (watcher) {
-                        watcher.close();
-                        userWatchers.delete(socket.user.id);
-                    }
-                    
-                    // Keep PTY alive for 2 minutes for potential reconnection
-                    setTimeout(() => {
-                        const currentSocketSet = userSockets.get(socket.user.id);
-                        if (!currentSocketSet || currentSocketSet.size === 0) {
-                            const ptyProcess = userPtyProcesses.get(socket.user.id);
-                            if (ptyProcess && !ptyProcess.killed) {
-                                console.log(`Cleaning up PTY for inactive user ${socket.user.email}`);
-                                ptyProcess.kill();
-                                userPtyProcesses.delete(socket.user.id);
-                            }
-                        }
-                    }, 2 * 60 * 1000); // 2 minutes
-                }
-            }
-        });
-
-    } catch (error) {
-        console.error('Error setting up user session:', error);
-        socket.emit('error', 'Failed to initialize workspace');
-    }
+    });
 });
 
-// Protected routes
+// Clean up empty workspaces (No sockets in room)
+setInterval(() => {
+    if (workspacePtyProcessesRef && workspaceWatchersRef) {
+        for (const [workspaceId, ptyProcess] of workspacePtyProcessesRef.entries()) {
+            const room = io.sockets.adapter.rooms.get(`workspace:${workspaceId}`);
+            if (!room || room.size === 0) {
+                console.log(`Cleaning up inactive workspace ${workspaceId}`);
+                if (ptyProcess && !ptyProcess.killed) ptyProcess.kill();
+                workspacePtyProcessesRef.delete(workspaceId);
+                
+                const watcher = workspaceWatchersRef.get(workspaceId);
+                if (watcher) {
+                    watcher.close();
+                    workspaceWatchersRef.delete(workspaceId);
+                }
+            }
+        }
+    }
+}, 5 * 60 * 1000);
+
+// Protected File routes (Updated for Workspace)
 app.get('/files', authenticateToken, async (req, res) => {
-    const userDir = `./users/${req.user.id}`;
-    await fs.mkdir(userDir, { recursive: true });
-    const filetree = await generatefile(userDir);
-    containerManager.updateUserActivity(req.user.id);
-    return res.json({ tree: filetree });
+    const workspaceId = req.query.workspaceId;
+    if (!workspaceId) return res.status(400).json({ error: 'workspaceId required' });
+    
+    const workspaceDir = `./workspaces/${workspaceId}`;
+    try {
+        await fs.mkdir(workspaceDir, { recursive: true });
+        const filetree = await generatefile(workspaceDir);
+        containerManager.updateWorkspaceActivity(workspaceId);
+        return res.json({ tree: filetree });
+    } catch(err) {
+        return res.status(500).json({ error: err.message });
+    }
 });
 
 app.get('/files/content', authenticateToken, async (req, res) => {
-    const filePath = req.query.path;
+    const { workspaceId, path: filePath } = req.query;
+    if (!workspaceId || !filePath) return res.status(400).json({ error: 'workspaceId and path required' });
 
-    if (!filePath) {
-        return res.status(400).json({ error: 'Path parameter is required' });
-    }
-
-    const fullPath = `./users/${req.user.id}${filePath}`;
-
+    const fullPath = `./workspaces/${workspaceId}${filePath}`;
     try {
         const stat = await fs.stat(fullPath);
-        if (stat.isDirectory()) {
-            return res.status(400).json({ error: 'Cannot read directory content' });
-        }
-
+        if (stat.isDirectory()) return res.status(400).json({ error: 'Cannot read directory content' });
         const content = await fs.readFile(fullPath, 'utf-8');
-        containerManager.updateUserActivity(req.user.id);
+        containerManager.updateWorkspaceActivity(workspaceId);
         return res.json({ content });
     } catch (error) {
         return res.status(404).json({ error: 'File not found' });
@@ -297,21 +258,34 @@ app.get('/files/content', authenticateToken, async (req, res) => {
 });
 
 app.post('/files/create', authenticateToken, async (req, res) => {
-    const { path: filePath, type } = req.body;
+    const { workspaceId, path: filePath, type } = req.body;
+    if (!workspaceId || !filePath) return res.status(400).json({ error: 'workspaceId and path required' });
 
-    if (!filePath) {
-        return res.status(400).json({ error: 'Path parameter is required' });
-    }
-
-    const fullPath = `./users/${req.user.id}${filePath}`;
-
+    const fullPath = `./workspaces/${workspaceId}${filePath}`;
     try {
         if (type === 'folder') {
             await fs.mkdir(fullPath, { recursive: true });
         } else {
+            // Ensure parent directory exists
+            await fs.mkdir(require('path').dirname(fullPath), { recursive: true });
             await fs.writeFile(fullPath, '', 'utf-8');
         }
-        containerManager.updateUserActivity(req.user.id);
+        containerManager.updateWorkspaceActivity(workspaceId);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/files/save', authenticateToken, async (req, res) => {
+    const { workspaceId, path: filePath, content } = req.body;
+    if (!workspaceId || !filePath) return res.status(400).json({ error: 'workspaceId and path required' });
+
+    const fullPath = `./workspaces/${workspaceId}${filePath}`;
+    try {
+        await fs.mkdir(require('path').dirname(fullPath), { recursive: true });
+        await fs.writeFile(fullPath, content ?? '', 'utf-8');
+        containerManager.updateWorkspaceActivity(workspaceId);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -319,61 +293,61 @@ app.post('/files/create', authenticateToken, async (req, res) => {
 });
 
 app.delete('/files/delete', authenticateToken, async (req, res) => {
-    const { path: filePath } = req.body;
-    if (!filePath) {
-        return res.status(400).json({ error: 'Path parameter is required' });
-    }
+    const { workspaceId, path: filePath } = req.body;
+    if (!workspaceId || !filePath) return res.status(400).json({ error: 'workspaceId and path required' });
 
-    const fullPath = `./users/${req.user.id}${filePath}`;
-
+    const fullPath = `./workspaces/${workspaceId}${filePath}`;
     try {
         const stat = await fs.stat(fullPath);
         if (stat.isDirectory()) {
-            await fs.rmdir(fullPath, { recursive: true });
+            await fs.rm(fullPath, { recursive: true });
         } else {
             await fs.unlink(fullPath);
         }
-        containerManager.updateUserActivity(req.user.id);
+        containerManager.updateWorkspaceActivity(workspaceId);
         res.json({ success: true, message: 'Deleted successfully' });
     } catch (error) {
-        if (error.code === 'ENOENT') {
-            res.status(404).json({ error: 'File or Folder not found' });
-        } else {
-            res.status(500).json({ error: error.message });
-        }
+        if (error.code === 'ENOENT') res.status(404).json({ error: 'File or Folder not found' });
+        else res.status(500).json({ error: error.message });
     }
 });
 
 app.use(express.static(path.join(__dirname, '..', 'client/build')));
 
-// app.get('*', (req, res) => {
-//   res.sendFile(path.join(__dirname, '..', 'client/build', 'index.html'));
-// });
+// Yjs WebSocket Server Setup with Hocuspocus
+const { Server, Hocuspocus } = require('@hocuspocus/server');
+const hocuspocusServer = typeof Server.configure === 'function' 
+    ? Server.configure({ port: 1234 }) 
+    : new Hocuspocus().configure({ port: 1234 });
+
+server.on('upgrade', (request, socket, head) => {
+    const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
+    // Route Yjs traffic specifically
+    if (pathname === '/yjs') {
+        hocuspocusServer.handleConnection(socket, request);
+    }
+});
 
 const PORT = process.env.PORT || 8000;
 
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server is running on port ${PORT}`)
-})
+});
 
 async function generatefile(directory) {
     const tree = {};
-
     async function buildtree(currentDirectory, currentTree) {
-        const files = await fs.readdir(currentDirectory)
-
+        const files = await fs.readdir(currentDirectory);
         for (const file of files) {
             const filePath = path.join(currentDirectory, file);
             const stat = await fs.stat(filePath);
             if (stat.isDirectory()) {
                 currentTree[file] = {};
                 await buildtree(filePath, currentTree[file]);
-            }
-            else {
+            } else {
                 currentTree[file] = null;
             }
         }
-
     }
     await buildtree(directory, tree);
     return tree;

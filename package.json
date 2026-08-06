@@ -3,11 +3,13 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-  "devDependencies": {},
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
   "scripts": {
     "install-deps": "npm install && npm install --prefix server && npm install --prefix client",
     "server": "npm start --prefix server",
-    "client": "npm start --prefix client",
+    "client": "npm run dev --prefix client",
     "dev": "concurrently \"npm run server\" \"npm run client\""
   },
   "repository": {
