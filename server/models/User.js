@@ -64,7 +64,7 @@ userSchema.methods.generateAuthToken = function() {
             username: this.username,
             email: this.email
         },
-        process.env.JWT_SECRET,
+        process.env.JWT_SECRET || 'default_secret_key_cloud_ide_12345',
         { expiresIn: '7d' }
     );
 };
