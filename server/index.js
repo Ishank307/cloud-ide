@@ -29,7 +29,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/cloud-ide
 
 // Middleware
 app.use(cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: true,
     credentials: true
 }));
 app.use(express.json());
@@ -166,7 +166,7 @@ app.delete('/workspaces/:id', authenticateToken, async (req, res) => {
 // Socket.IO Setup
 const io = new SocketServer(server, {
     cors: {
-        origin: process.env.CLIENT_URL || 'http://localhost:5173',
+        origin: true,
         credentials: true
     }
 });
