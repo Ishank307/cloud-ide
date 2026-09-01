@@ -4,13 +4,20 @@ const jwt = require('jsonwebtoken');
 const router = express.Router();
 
 // Google OAuth login
-router.get('/google', 
-    passport.authenticate('google', { scope: ['profile', 'email'] })
-);
+router.get('/google', (req, res, next) => {
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+        return res.status(400).json({ error: 'Google OAuth is not configured on this server. Please use Email/Password (JWT) login.' });
+    }
+    passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
+});
 
 // Google OAuth callback
-router.get('/google/callback', 
-    passport.authenticate('google', { failureRedirect: `${process.env.CLIENT_URL}?error=auth_failed` }),
+router.get('/google/callback', (req, res, next) => {
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+        return res.status(400).json({ error: 'Google OAuth is not configured.' });
+    }
+    passport.authenticate('google', { failureRedirect: `${process.env.CLIENT_URL}?error=auth_failed` })(req, res, next);
+},
     (req, res) => {
         // Generate JWT token
         const token = jwt.sign(
