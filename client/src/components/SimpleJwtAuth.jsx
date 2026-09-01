@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import './Auth.css';
+import API_BASE_URL from '../config/api';
 
 const SimpleJwtAuth = ({ onLogin }) => {
     const [isLogin, setIsLogin] = useState(true);
@@ -30,7 +31,7 @@ const SimpleJwtAuth = ({ onLogin }) => {
                 ? { email: formData.email, password: formData.password }
                 : formData;
 
-            const response = await fetch(`http://localhost:8000${endpoint}`, {
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -56,8 +57,7 @@ const SimpleJwtAuth = ({ onLogin }) => {
     };
 
     const handleGoogleLogin = () => {
-        const serverUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-        window.location.href = `${serverUrl}/auth/google`;
+        window.location.href = `${API_BASE_URL}/auth/google`;
     };
 
     return (

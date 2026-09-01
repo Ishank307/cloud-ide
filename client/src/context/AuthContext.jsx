@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { API_ENDPOINTS } from '../config/api';
+import API_BASE_URL, { API_ENDPOINTS } from '../config/api';
 
 const AuthContext = createContext();
 
@@ -25,7 +25,7 @@ export const AuthProvider = ({ children }) => {
             const endpoint = isJWT ? '/api/auth/me' : API_ENDPOINTS.AUTH_ME;
 
             // Verify token and get user info
-            fetch(`http://localhost:8000${endpoint}`, {
+            fetch(`${API_BASE_URL}${endpoint}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }

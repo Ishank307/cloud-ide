@@ -1,8 +1,9 @@
 import { io } from 'socket.io-client';
+import API_BASE_URL from './config/api';
 
 let socket = null;
 
-export const createSocket = (token, url = 'http://localhost:8000') => {
+export const createSocket = (token, url = API_BASE_URL) => {
     if (socket) {
         socket.disconnect();
     }
