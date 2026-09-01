@@ -40,11 +40,18 @@ class ContainerManager {
                 }
             }
 
-            // Create new container for workspace
-            // Simple entrypoint: just keep the container alive.
-            // We exec into it via 'docker exec' after it starts.
+            // Check if cloud-ide-runner image exists, otherwise fallback to node:18-alpine
+            let imageToUse = 'node:18-alpine';
+            try {
+                const image = docker.getImage('cloud-ide-runner:latest');
+                await image.inspect();
+                imageToUse = 'cloud-ide-runner:latest';
+            } catch (e) {
+                // cloud-ide-runner not built yet, fallback to node:18-alpine
+            }
+
             const container = await docker.createContainer({
-                Image: 'node:18-alpine',
+                Image: imageToUse,
                 Cmd: ['tail', '-f', '/dev/null'],
                 WorkingDir: `/workspace`,
                 Tty: true,
