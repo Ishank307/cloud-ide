@@ -8,9 +8,12 @@ const workspacePtyProcesses = new Map(); // workspaceId -> ptyProcess
 module.exports = function setupTerminalHandlers(io, socket) {
     socket.on('terminal:start', async ({ workspaceId }) => {
         try {
+            // Track which workspace this socket is in
+            socket.workspaceId = workspaceId;
+
             // Join workspace room
             socket.join(`workspace:${workspaceId}`);
-            
+
             // Create or get container
             // Enforce Docker for isolation
             await containerManager.createWorkspaceContainer(workspaceId);
@@ -20,21 +23,20 @@ module.exports = function setupTerminalHandlers(io, socket) {
             await fs.mkdir(workspaceDir, { recursive: true });
 
             let ptyProcess = workspacePtyProcesses.get(workspaceId);
-            
+
             if (!ptyProcess || ptyProcess.killed) {
                 const pty = require('node-pty');
-                
+
                 console.log(`Creating new PTY process for workspace ${workspaceId}`);
-                
+
                 // We connect the PTY to the docker container via docker exec
                 const containerInfo = containerManager.getWorkspaceContainer(workspaceId);
                 let command = 'bash';
                 let args = [];
-                
+
                 if (containerInfo && containerInfo.id !== 'local-mode' && containerInfo.id !== 'dev-mode') {
-                    // Use Docker exec to run bash inside the container
                     command = 'docker';
-                    args = ['exec', '-it', '-u', 'workspace', containerInfo.id, 'bash'];
+                    args = ['exec', '-it', containerInfo.id, 'sh'];
                 } else {
                     // Fallback to local bash
                     try {
@@ -65,7 +67,7 @@ module.exports = function setupTerminalHandlers(io, socket) {
                     });
 
                     workspacePtyProcesses.set(workspaceId, ptyProcess);
-                    
+
                     setTimeout(() => {
                         if (!ptyProcess.killed) {
                             socket.emit('terminal:data', `Welcome to workspace ${workspaceId}!\r\n`);
@@ -88,7 +90,7 @@ module.exports = function setupTerminalHandlers(io, socket) {
 
     socket.on('terminal:write', ({ workspaceId, data }) => {
         const currentPty = workspacePtyProcesses.get(workspaceId);
-        
+
         if (currentPty && !currentPty.killed) {
             try {
                 currentPty.write(data);
@@ -100,6 +102,6 @@ module.exports = function setupTerminalHandlers(io, socket) {
             }
         }
     });
-    
+
     return { workspacePtyProcesses };
 };

@@ -202,6 +202,36 @@ io.on('connection', (socket) => {
                 userSockets.delete(socket.user.id);
             }
         }
+
+        // After a short grace period, clean up workspace if nobody is left in the room
+        const workspaceId = socket.workspaceId;
+        if (workspaceId) {
+            setTimeout(() => {
+                const room = io.sockets.adapter.rooms.get(`workspace:${workspaceId}`);
+                if (!room || room.size === 0) {
+                    console.log(`All users left workspace ${workspaceId}, cleaning up...`);
+
+                    // Kill PTY process
+                    if (workspacePtyProcessesRef) {
+                        const ptyProcess = workspacePtyProcessesRef.get(workspaceId);
+                        if (ptyProcess && !ptyProcess.killed) ptyProcess.kill();
+                        workspacePtyProcessesRef.delete(workspaceId);
+                    }
+
+                    // Close file watcher
+                    if (workspaceWatchersRef) {
+                        const watcher = workspaceWatchersRef.get(workspaceId);
+                        if (watcher) {
+                            watcher.close();
+                            workspaceWatchersRef.delete(workspaceId);
+                        }
+                    }
+
+                    // Stop Docker container
+                    containerManager.stopWorkspaceContainer(workspaceId);
+                }
+            }, 15000); // 15s grace period — allows page refresh reconnects
+        }
     });
 });
 

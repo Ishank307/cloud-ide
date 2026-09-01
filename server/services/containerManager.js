@@ -41,9 +41,11 @@ class ContainerManager {
             }
 
             // Create new container for workspace
+            // Simple entrypoint: just keep the container alive.
+            // We exec into it via 'docker exec' after it starts.
             const container = await docker.createContainer({
                 Image: 'node:18-alpine',
-                Cmd: ['sh', '-c', 'apk add --no-cache bash && addgroup -g 1000 workspace && adduser -u 1000 -G workspace -h /workspace -D workspace && chown -R workspace:workspace /workspace && su workspace -c "cd /workspace && tail -f /dev/null"'],
+                Cmd: ['tail', '-f', '/dev/null'],
                 WorkingDir: `/workspace`,
                 Tty: true,
                 OpenStdin: true,
@@ -57,7 +59,8 @@ class ContainerManager {
                     PidsLimit: 100,
                     NetworkMode: 'none',
                     Binds: [
-                        `${require('path').resolve('./workspaces/' + workspaceId)}:/workspace`
+                        // :z relabels the directory for SELinux (required on Fedora/RHEL)
+                        `${require('path').resolve('./workspaces/' + workspaceId)}:/workspace:z`
                     ]
                 }
             });
@@ -86,14 +89,17 @@ class ContainerManager {
             const containerInfo = this.workspaceContainers.get(workspaceId);
             if (!containerInfo) return;
 
-            const container = docker.getContainer(containerInfo.id);
-            await container.stop();
-            await container.remove();
-            
+            // Skip Docker API calls for fake dev/local-mode placeholders
+            const isFake = containerInfo.id === 'dev-mode' || containerInfo.id === 'local-mode';
+            if (!isFake) {
+                const container = docker.getContainer(containerInfo.id);
+                await container.stop();
+                await container.remove();
+                console.log(`Stopped and removed container for workspace ${workspaceId}`);
+            }
+
             this.workspaceContainers.delete(workspaceId);
             this.clearWorkspaceTimer(workspaceId);
-            
-            console.log(`Stopped and removed container for workspace ${workspaceId}`);
         } catch (error) {
             console.error('Error stopping container:', error);
         }

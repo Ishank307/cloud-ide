@@ -30,6 +30,12 @@ pids
 users/
 server/users/
 
+# Workspaces
+workspaces/*
+!workspaces/.gitkeep
+server/workspaces/*
+!server/workspaces/.gitkeep
+
 # OS generated files
 .DS_Store
 .DS_Store?

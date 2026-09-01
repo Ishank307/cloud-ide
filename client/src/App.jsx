@@ -4,18 +4,14 @@ import IdeWorkspace from "./components/IdeWorkspace";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import './App.css';
 import API_BASE_URL from "./config/api";
-import { TerminalSquare, Plus, ArrowRight, Clock, Trash2, Edit2 } from "lucide-react";
+import { TerminalSquare, Plus, Clock, Trash2, Edit2 } from "lucide-react";
 
 // ─── Workspace Selector ───────────────────────────────────────────────────────
 
 const WorkspaceSelector = ({ user, token, onEnter, onLogout }) => {
     const [workspaces, setWorkspaces] = useState([]);
-    const [joinInput, setJoinInput] = useState('');
     const [creating, setCreating] = useState(false);
     const [loading, setLoading] = useState(true);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [searchResults, setSearchResults] = useState([]);
-    const [isSearching, setIsSearching] = useState(false);
     const [createName, setCreateName] = useState('');
     const [editingWsId, setEditingWsId] = useState(null);
     const [editingWsName, setEditingWsName] = useState('');
@@ -60,14 +56,10 @@ const WorkspaceSelector = ({ user, token, onEnter, onLogout }) => {
         }
     };
 
-    const handleJoin = () => {
-        if (joinInput.trim()) onEnter(joinInput.trim());
-    };
-
     const handleDelete = async (e, id) => {
         e.stopPropagation();
         if (!window.confirm("Are you sure you want to delete this workspace? This action cannot be undone.")) return;
-        
+
         try {
             const res = await fetch(`${API_BASE_URL}/workspaces/${id}`, {
                 method: 'DELETE',
@@ -75,7 +67,6 @@ const WorkspaceSelector = ({ user, token, onEnter, onLogout }) => {
             });
             if (res.ok) {
                 setWorkspaces(prev => prev.filter(w => w._id !== id));
-                setSearchResults(prev => prev.filter(w => w._id !== id));
             } else {
                 const err = await res.json();
                 alert(err.error || "Failed to delete workspace");
@@ -109,9 +100,6 @@ const WorkspaceSelector = ({ user, token, onEnter, onLogout }) => {
             });
             if (res.ok) {
                 setWorkspaces(prev => prev.map(ws => ws._id === id ? { ...ws, name: editingWsName } : ws));
-                if (searchResults.length > 0) {
-                    setSearchResults(prev => prev.map(ws => ws._id === id ? { ...ws, name: editingWsName } : ws));
-                }
             } else {
                 alert('Failed to rename workspace');
             }
@@ -127,26 +115,6 @@ const WorkspaceSelector = ({ user, token, onEnter, onLogout }) => {
             handleRenameSubmit(e, id);
         } else if (e.key === 'Escape') {
             setEditingWsId(null);
-        }
-    };
-
-    const handleSearch = async (query) => {
-        setSearchQuery(query);
-        if (!query.trim()) {
-            setSearchResults([]);
-            return;
-        }
-        setIsSearching(true);
-        try {
-            const res = await fetch(`${API_BASE_URL}/workspaces/search?q=${encodeURIComponent(query)}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await res.json();
-            if (Array.isArray(data)) setSearchResults(data);
-        } catch (err) {
-            console.error('Failed to search workspaces:', err);
-        } finally {
-            setIsSearching(false);
         }
     };
 
@@ -175,6 +143,7 @@ const WorkspaceSelector = ({ user, token, onEnter, onLogout }) => {
                         placeholder="Enter workspace name..."
                         value={createName}
                         onChange={e => setCreateName(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleCreate()}
                     />
                     <button className="btn-create" style={{ width: 'auto' }} onClick={handleCreate} disabled={creating}>
                         <Plus size={16} />
@@ -206,8 +175,8 @@ const WorkspaceSelector = ({ user, token, onEnter, onLogout }) => {
                                             onClick={(e) => e.stopPropagation()}
                                             autoFocus
                                             onBlur={(e) => handleRenameSubmit(e, ws._id)}
-                                            style={{ 
-                                                background: 'rgba(255,255,255,0.1)', 
+                                            style={{
+                                                background: 'rgba(255,255,255,0.1)',
                                                 border: '1px solid var(--accent)',
                                                 color: 'var(--text-main)',
                                                 borderRadius: '4px',
@@ -230,16 +199,16 @@ const WorkspaceSelector = ({ user, token, onEnter, onLogout }) => {
                                             {formatDate(ws.updatedAt)}
                                         </span>
                                     )}
-                                    <button 
-                                        className="btn-delete-ws" 
+                                    <button
+                                        className="btn-delete-ws"
                                         onClick={(e) => handleStartRename(e, ws)}
                                         title="Rename workspace"
                                         style={{ marginRight: '4px' }}
                                     >
                                         <Edit2 size={14} />
                                     </button>
-                                    <button 
-                                        className="btn-delete-ws" 
+                                    <button
+                                        className="btn-delete-ws"
                                         onClick={(e) => handleDelete(e, ws._id)}
                                         title="Delete workspace"
                                     >
@@ -254,96 +223,6 @@ const WorkspaceSelector = ({ user, token, onEnter, onLogout }) => {
                 {loading && (
                     <div className="ws-loading">Loading your workspaces...</div>
                 )}
-
-                {/* Divider */}
-                <div className="selector-divider"><span>search or join</span></div>
-                
-                {/* Search input */}
-                <div className="join-row">
-                    <input
-                        type="text"
-                        placeholder="Search workspace by name or ID..."
-                        value={searchQuery}
-                        onChange={e => handleSearch(e.target.value)}
-                    />
-                </div>
-
-                {isSearching && (
-                    <div className="ws-loading" style={{ marginTop: '10px' }}>Searching...</div>
-                )}
-
-                {!isSearching && searchResults.length > 0 && (
-                    <div className="ws-list" style={{ marginTop: '10px' }}>
-                        <div className="ws-list-label">SEARCH RESULTS</div>
-                        {searchResults.map(ws => (
-                            <div
-                                key={ws._id}
-                                className="ws-item"
-                                onClick={() => onEnter(ws._id)}
-                            >
-                                <div className="ws-item-icon">
-                                    <TerminalSquare size={16} />
-                                </div>
-                                <div className="ws-item-info">
-                                    {editingWsId === ws._id ? (
-                                        <input
-                                            type="text"
-                                            className="ws-rename-input"
-                                            value={editingWsName}
-                                            onChange={(e) => setEditingWsName(e.target.value)}
-                                            onKeyDown={(e) => handleRenameKeyDown(e, ws._id)}
-                                            onClick={(e) => e.stopPropagation()}
-                                            autoFocus
-                                            onBlur={(e) => handleRenameSubmit(e, ws._id)}
-                                            style={{ 
-                                                background: 'rgba(255,255,255,0.1)', 
-                                                border: '1px solid var(--accent)',
-                                                color: 'var(--text-main)',
-                                                borderRadius: '4px',
-                                                padding: '2px 6px',
-                                                fontSize: '15px',
-                                                fontWeight: '600',
-                                                width: '100%',
-                                                outline: 'none'
-                                            }}
-                                        />
-                                    ) : (
-                                        <span className="ws-item-name">{ws.name || 'Untitled Workspace'}</span>
-                                    )}
-                                    <span className="ws-item-id">{ws._id}</span>
-                                </div>
-                                <div className="ws-item-meta" style={{ flexDirection: 'row', alignItems: 'center', gap: '8px' }}>
-                                    <button 
-                                        className="btn-delete-ws" 
-                                        onClick={(e) => handleStartRename(e, ws)}
-                                        title="Rename workspace"
-                                    >
-                                        <Edit2 size={14} />
-                                    </button>
-                                    <button 
-                                        className="btn-delete-ws" 
-                                        onClick={(e) => handleDelete(e, ws._id)}
-                                        title="Delete workspace"
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {/* Join input */}
-                <div className="join-row">
-                    <input
-                        type="text"
-                        placeholder="Paste workspace ID..."
-                        value={joinInput}
-                        onChange={e => setJoinInput(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && handleJoin()}
-                    />
-                    <button className="btn-join" onClick={handleJoin}>Join</button>
-                </div>
 
                 <button className="btn-logout-link" onClick={onLogout}>Sign out</button>
             </div>
