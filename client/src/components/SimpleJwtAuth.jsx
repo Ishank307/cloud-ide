@@ -1,8 +1,12 @@
 import { useState } from 'react';
 import './Auth.css';
 import API_BASE_URL from '../config/api';
+import { useAuth } from '../context/AuthContext';
 
 const SimpleJwtAuth = ({ onLogin }) => {
+    const auth = useAuth();
+    const handleLoginCallback = onLogin || auth?.login;
+
     const [isLogin, setIsLogin] = useState(true);
     const [formData, setFormData] = useState({
         username: '',
@@ -42,15 +46,17 @@ const SimpleJwtAuth = ({ onLogin }) => {
             const data = await response.json();
 
             if (response.ok) {
-                // Store token and call onLogin
+                // Store token and call handleLoginCallback
                 localStorage.setItem('jwt_token', data.token);
-                onLogin(data.token, data.user);
+                if (typeof handleLoginCallback === 'function') {
+                    handleLoginCallback(data.token, data.user);
+                }
             } else {
                 setError(data.error || 'Authentication failed');
             }
         } catch (error) {
-            console.error('Auth error:', error);
-            setError('Network error. Please try again.');
+            console.error('Auth submit error:', error);
+            setError(error.message || 'Network error. Please try again.');
         } finally {
             setLoading(false);
         }

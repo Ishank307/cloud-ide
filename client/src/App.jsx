@@ -270,7 +270,7 @@ const MainApp = () => {
         logout();
     };
 
-    if (!user) return <SimpleJwtAuth />;
+    if (!user) return <SimpleJwtAuth onLogin={login} />;
 
     if (workspaceId) {
         return (
