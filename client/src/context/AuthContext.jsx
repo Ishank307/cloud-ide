@@ -30,9 +30,12 @@ export const AuthProvider = ({ children }) => {
                     'Authorization': `Bearer ${token}`
                 }
             })
-                .then(res => res.json())
+                .then(async res => {
+                    if (!res.ok) throw new Error(`Auth failed: ${res.status}`);
+                    return res.json();
+                })
                 .then(data => {
-                    if (data.user) {
+                    if (data && data.user) {
                         console.log('User data received:', data.user);
                         setUser(data.user);
                     } else {

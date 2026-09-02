@@ -43,7 +43,12 @@ const SimpleJwtAuth = ({ onLogin }) => {
                 body: JSON.stringify(payload),
             });
 
-            const data = await response.json();
+            let data;
+            try {
+                data = await response.json();
+            } catch (jsonErr) {
+                data = { error: `Server response error (${response.status})` };
+            }
 
             if (response.ok) {
                 // Store token and call handleLoginCallback
