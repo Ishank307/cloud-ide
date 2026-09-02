@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "start": "vite",
-    "build": "vite build",
+    "build": "NODE_OPTIONS=--max-old-space-size=2048 vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
